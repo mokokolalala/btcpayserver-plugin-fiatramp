@@ -1,0 +1,252 @@
+@using System.Linq
+@using BTCPayServer
+@using BTCPayServer.Plugins.FiatRamp
+@using BTCPayServer.Plugins.FiatRamp.Services
+@model BTCPayServer.Models.InvoicingModels.CheckoutModel
+@inject FiatRampSettingsService SettingsService
+@inject GeoRegionService Geo
+@inject BTCPayServer.Services.Invoices.InvoiceRepository InvoiceRepository
+@inject BTCPayServer.Abstractions.Services.Safe Safe
+@{
+    Layout = null;
+    var settings = await SettingsService.Get(Model.StoreId);
+    object config;
+    if (!settings.Enabled)
+    {
+        config = new { enabled = false };
+    }
+    else
+    {
+        var invoice = await InvoiceRepository.GetInvoice(Model.InvoiceId);
+        var geo = await Geo.LookupAsync(Context.Connection.RemoteIpAddress, settings, Context.RequestAborted);
+        var currency = invoice?.Currency ?? "";
+        var isCrypto = currency.Equals("BTC", StringComparison.OrdinalIgnoreCase) || currency.Equals("SATS", StringComparison.OrdinalIgnoreCase);
+        config = new
+        {
+            enabled = true,
+            headline = settings.Headline,
+            intro = settings.Intro,
+            bufferPercent = settings.BufferPercent,
+            region = geo.Region?.ToString() ?? "Unknown",
+            country = geo.Country,
+            fiatCurrency = isCrypto ? null : currency,
+            fiatTotal = isCrypto ? 0m : (invoice?.Price ?? 0m),
+            methods = PayMethodInfo.All.Select(m => new { id = m.Method.ToString(), slug = m.Slug, label = m.Label, aliases = m.Aliases }),
+            providers = settings.Providers
+                .Where(p => p.IsUsable)
+                .OrderBy(p => p.Order)
+                .Select(p => new
+                {
+                    id = p.Id,
+                    name = p.Name,
+                    note = p.Note,
+                    methods = p.Methods.Select(m => m.ToString()),
+                    regions = p.Regions.Select(r => r.ToString()),
+                    url = Url.Action("Go", "FiatRamp", new { area = Plugin.Area, invoiceId = Model.InvoiceId, providerId = p.Id })
+                })
+        };
+    }
+}
+<template id="fiatramp-template">
+    <div v-if="visible" class="fiatramp" id="FiatRamp">
+        <h6 v-text="headline"></h6>
+        <div class="fiatramp__intro" v-text="cfg.intro"></div>
+
+        <div v-if="methodChoices.length > 1" class="fiatramp__methods">
+            <button v-for="m in methodChoices" :key="m.id" type="button" class="fiatramp__method"
+                    :class="{ active: method === m.id }" v-on:click="select(m.id)" v-text="m.label"></button>
+        </div>
+
+        <dl class="fiatramp__rows">
+            <div>
+                <dt>Address</dt>
+                <dd><span class="val" v-text="model.address"></span><button type="button" class="fiatramp__copy" :class="{ ok: copied.address }" v-on:click="copy(model.address, 'address')" v-text="copied.address ? 'Copied!' : 'Copy'"></button></dd>
+            </div>
+            <div>
+                <dt>Amount</dt>
+                <dd><span class="val hl" v-text="`${model.due} ${model.paymentMethodCurrency}`"></span><button type="button" class="fiatramp__copy" :class="{ ok: copied.btc }" v-on:click="copy(asNumber(model.due), 'btc')" v-text="copied.btc ? 'Copied!' : 'Copy'"></button></dd>
+            </div>
+            <div v-if="fiatDue > 0">
+                <dt v-text="`In ${cfg.fiatCurrency}`"></dt>
+                <dd><span class="val" v-text="`${fmt(fiatDue)} ${cfg.fiatCurrency}`"></span><button type="button" class="fiatramp__copy" :class="{ ok: copied.fiat }" v-on:click="copy(fmt(fiatDue), 'fiat')" v-text="copied.fiat ? 'Copied!' : 'Copy'"></button></dd>
+            </div>
+        </dl>
+
+        <div v-if="fiatDue > 0 && cfg.bufferPercent > 0" class="fiatramp__buffer">
+            <span>&#9888;&#65039;</span>
+            <span>Providers deduct their fee and the network fee before sending. Buy at least <strong v-text="`${fmt(fiatBuy)} ${cfg.fiatCurrency}`"></strong> (+{{cfg.bufferPercent}}%) so the full amount arrives.</span>
+        </div>
+
+        <div v-if="providers.length" class="fiatramp__providers">
+            <a v-for="p in providers" :key="p.id" class="fiatramp__provider" :href="href(p)" target="_blank" rel="noopener noreferrer">
+                <span class="name" v-text="p.name"></span>
+                <small v-if="p.note" v-text="p.note"></small>
+            </a>
+        </div>
+        <div v-else class="fiatramp__empty">No provider available for <span v-text="methodLabel"></span> in your region. Try another payment method above.</div>
+
+        <div class="fiatramp__foot">
+            This page keeps watching the blockchain and updates by itself once the purchase is sent.
+            <template v-if="model.storeSupportUrl"> Sent it and nothing shows after 30 minutes? <a :href="model.storeSupportUrl" target="_blank" rel="noopener">Contact us</a>.</template>
+        </div>
+    </div>
+</template>
+
+<style>
+    .fiatramp { margin-top: var(--btcpay-space-l); padding-top: var(--btcpay-space-l); border-top: 1px solid var(--btcpay-body-border-light); text-align: start; }
+    .fiatramp h6 { margin-bottom: var(--btcpay-space-xs); font-weight: var(--btcpay-font-weight-semibold); text-align: center; }
+    .fiatramp__intro { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); text-align: center; margin-bottom: var(--btcpay-space-m); }
+    .fiatramp__methods { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--btcpay-space-xs); margin-bottom: var(--btcpay-space-m); }
+    .fiatramp__method { padding: .25rem .75rem; font-size: var(--btcpay-font-size-s); border: 1px solid var(--btcpay-body-border-medium); border-radius: 2rem; background: none; color: var(--btcpay-body-text-muted); cursor: pointer; }
+    .fiatramp__method:hover { color: var(--btcpay-body-text); border-color: var(--btcpay-body-text-muted); }
+    .fiatramp__method.active { background: var(--btcpay-primary); border-color: var(--btcpay-primary); color: var(--btcpay-white); }
+    .fiatramp__rows { margin: 0 0 var(--btcpay-space-m); }
+    .fiatramp__rows > div { display: flex; align-items: center; justify-content: space-between; gap: var(--btcpay-space-s); padding: var(--btcpay-space-xs) 0; border-bottom: 1px solid var(--btcpay-body-border-light); }
+    .fiatramp__rows > div:last-child { border-bottom: none; }
+    .fiatramp__rows dt { margin: 0; font-weight: var(--btcpay-font-weight-normal); color: var(--btcpay-body-text-muted); white-space: nowrap; }
+    .fiatramp__rows dd { margin: 0; display: flex; align-items: center; gap: var(--btcpay-space-xs); min-width: 0; max-width: none; font-family: var(--btcpay-font-monospace, ui-monospace, monospace); font-size: var(--btcpay-font-size-s); text-align: end; }
+    .fiatramp__rows dd .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .fiatramp__rows dd .val.hl { color: var(--btcpay-primary); font-weight: var(--btcpay-font-weight-semibold); font-size: var(--btcpay-body-font-size); }
+    .fiatramp__copy { flex-shrink: 0; padding: .1rem .55rem; font-size: .75rem; line-height: 1.4; border: 1px solid var(--btcpay-body-border-medium); border-radius: 1rem; background: none; color: var(--btcpay-body-text-muted); cursor: pointer; }
+    .fiatramp__copy:hover, .fiatramp__copy.ok { border-color: var(--btcpay-success); color: var(--btcpay-success); }
+    .fiatramp__buffer { display: flex; gap: var(--btcpay-space-xs); align-items: flex-start; padding: var(--btcpay-space-s) var(--btcpay-space-m); margin-bottom: var(--btcpay-space-m); border-radius: var(--border-radius); background: var(--btcpay-warning-bg, rgba(255,193,7,.12)); color: var(--btcpay-body-text); font-size: var(--btcpay-font-size-s); line-height: 1.4; }
+    .fiatramp__buffer strong { white-space: nowrap; }
+    .fiatramp__providers { display: grid; grid-template-columns: 1fr 1fr; gap: var(--btcpay-space-s); }
+    .fiatramp__provider { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .1rem; padding: .6rem .5rem; border: 1px solid var(--btcpay-body-border-medium); border-radius: var(--border-radius); background: var(--btcpay-body-bg); color: var(--btcpay-body-text); text-decoration: none; font-weight: var(--btcpay-font-weight-semibold); font-size: var(--btcpay-font-size-s); text-align: center; transition: border-color .15s, transform .1s; }
+    .fiatramp__provider:hover { border-color: var(--btcpay-primary); color: var(--btcpay-primary); transform: translateY(-1px); }
+    .fiatramp__provider small { font-weight: normal; color: var(--btcpay-body-text-muted); font-size: .7rem; line-height: 1.2; }
+    .fiatramp__empty { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); text-align: center; padding: var(--btcpay-space-s); }
+    .fiatramp__foot { margin-top: var(--btcpay-space-s); font-size: .75rem; color: var(--btcpay-body-text-muted); text-align: center; line-height: 1.4; }
+    .fiatramp__foot a { color: inherit; }
+</style>
+
+<script>
+(function () {
+    const FIATRAMP_CONFIG = @Safe.Json(config);
+
+    function normalizeRegion(value) {
+        const v = (value || '').toString().trim().toLowerCase();
+        if (v === 'eu' || v === 'europe') return 'EU';
+        if (v === 'us' || v === 'usa') return 'US';
+        if (v === 'other' || v === 'row') return 'Other';
+        return null;
+    }
+
+    function guessRegion() {
+        try {
+            const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+            if (tz.startsWith('Europe/')) return 'EU';
+            if (tz.startsWith('America/')) return 'US';
+            if (tz) return 'Other';
+        } catch (e) {}
+        const lang = (navigator.language || '').toLowerCase();
+        if (lang.endsWith('-us')) return 'US';
+        return null;
+    }
+
+    function methodFromUrl(methods) {
+        const candidates = [];
+        const hash = (location.hash || '').replace(/^#/, '').trim().toLowerCase();
+        if (hash) candidates.push(hash);
+        const q = new URLSearchParams(location.search).get('method');
+        if (q) candidates.push(q.trim().toLowerCase());
+        for (const c of candidates) {
+            for (const m of methods) {
+                if (c === m.slug || c === m.id.toLowerCase() || m.aliases.includes(c)) return m.id;
+            }
+        }
+        return null;
+    }
+
+    Vue.component('fiatramp-checkout', {
+        template: '#fiatramp-template',
+        props: { model: Object },
+        data() {
+            return {
+                cfg: FIATRAMP_CONFIG,
+                method: null,
+                preselected: false,
+                tzRegion: null,
+                copied: { address: false, btc: false, fiat: false }
+            };
+        },
+        computed: {
+            visible() {
+                return this.cfg.enabled
+                    && this.model && this.model.address
+                    && this.model.paymentMethodId === 'BTC-CHAIN'
+                    && this.providersForRegion.length > 0;
+            },
+            region() {
+                const override = normalizeRegion(new URLSearchParams(location.search).get('region'));
+                if (override) return override;
+                if (this.cfg.region && this.cfg.region !== 'Unknown') return this.cfg.region;
+                return this.tzRegion || 'Unknown';
+            },
+            providersForRegion() {
+                const r = this.region;
+                return (this.cfg.providers || []).filter(p => r === 'Unknown' || !p.regions.length || p.regions.includes(r));
+            },
+            methodChoices() {
+                return (this.cfg.methods || []).filter(m => this.providersForRegion.some(p => p.methods.includes(m.id)));
+            },
+            providers() {
+                return this.providersForRegion.filter(p => !this.method || p.methods.includes(this.method));
+            },
+            headline() {
+                if (!this.method) return this.cfg.headline;
+                return `Pay with ${this.methodLabel}`;
+            },
+            methodLabel() {
+                const m = (this.cfg.methods || []).find(m => m.id === this.method);
+                return m ? m.label : 'this method';
+            },
+            dueBtc() { return this.asNumber(this.model.due) || 0; },
+            totalBtc() { return this.asNumber(this.model.orderAmount) || 0; },
+            fiatDue() {
+                if (!this.cfg.fiatTotal || !this.totalBtc) return 0;
+                return this.cfg.fiatTotal * this.dueBtc / this.totalBtc;
+            },
+            fiatBuy() { return this.fiatDue * (1 + (this.cfg.bufferPercent || 0) / 100); }
+        },
+        mounted() {
+            this.tzRegion = guessRegion();
+            const m = methodFromUrl(this.cfg.methods || []);
+            if (m) {
+                this.method = m;
+                this.preselected = true;
+                this.$nextTick(() => {
+                    const el = document.getElementById('FiatRamp');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            }
+        },
+        methods: {
+            asNumber(val) { return val && parseFloat(val.toString().replace(/\s/g, '')); },
+            fmt(x) { return (Math.round(x * 100) / 100).toFixed(2); },
+            select(id) { this.method = this.method === id ? null : id; },
+            href(p) {
+                const u = new URL(p.url, location.origin);
+                if (this.method) u.searchParams.set('method', this.method);
+                u.searchParams.set('region', this.region);
+                return u.toString();
+            },
+            copy(text, key) {
+                const value = (text ?? '').toString();
+                const done = () => {
+                    this.$set(this.copied, key, true);
+                    setTimeout(() => this.$set(this.copied, key, false), 1500);
+                };
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(value).then(done, done);
+                } else {
+                    const ta = document.createElement('textarea');
+                    ta.value = value; document.body.appendChild(ta); ta.select();
+                    try { document.execCommand('copy'); } catch (e) {}
+                    document.body.removeChild(ta); done();
+                }
+            }
+        }
+    });
+})();
+</script>

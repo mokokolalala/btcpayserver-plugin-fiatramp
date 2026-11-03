@@ -1,0 +1,279 @@
+@using System
+@using System.Linq
+@model FiatRampSettings
+@{
+    ViewData.SetLayoutModel(new LayoutModel(Plugin.Area, "Fiat on-ramp").SetCategory(WellKnownCategories.Store));
+    var allMethods = PayMethodInfo.All;
+    var allRegions = new[] { Region.EU, Region.US, Region.Other };
+    var signings = Enum.GetValues<UrlSigning>();
+    var checkoutExample = Url.Action("Checkout", "UIInvoice", new { area = "", invoiceId = "INVOICE_ID" }, Context.Request.Scheme);
+}
+
+@section PageFootContent {
+    <script>
+        (function () {
+            const list = document.getElementById('ProviderList');
+            const tpl = document.getElementById('ProviderTemplate').innerHTML;
+            let n = 0;
+            document.getElementById('AddProvider').addEventListener('click', function () {
+                const key = 'new' + (n++) + Date.now();
+                const html = tpl.replace(/__KEY__/g, key);
+                const wrapper = document.createElement('div');
+                wrapper.innerHTML = html.trim();
+                list.appendChild(wrapper.firstElementChild);
+            });
+            list.addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-remove]');
+                if (!btn) return;
+                e.preventDefault();
+                btn.closest('.fr-provider').remove();
+            });
+            list.addEventListener('click', function (e) {
+                const btn = e.target.closest('[data-toggle-secret]');
+                if (!btn) return;
+                e.preventDefault();
+                const input = btn.closest('.input-group').querySelector('input');
+                input.type = input.type === 'password' ? 'text' : 'password';
+            });
+        })();
+    </script>
+}
+
+<form method="post">
+    <div class="sticky-header">
+        <vc:title-header />
+        <button id="page-primary" type="submit" name="command" value="save" class="btn btn-primary">Save</button>
+    </div>
+    <partial name="_StatusMessage" />
+    <div asp-validation-summary="ModelOnly" class="text-danger"></div>
+
+    <div class="row">
+        <div class="col-xxl-constrain col-xl-10">
+
+            <div class="settings-section">
+                <h3 class="mb-3">Checkout</h3>
+                <div class="form-check mb-3">
+                    <input asp-for="Enabled" type="checkbox" class="form-check-input" />
+                    <label asp-for="Enabled" class="form-check-label">Show "Buy Bitcoin and pay" on the Bitcoin (on-chain) checkout</label>
+                </div>
+                <div class="form-group">
+                    <label asp-for="Headline" class="form-label">Headline</label>
+                    <input asp-for="Headline" class="form-control" />
+                </div>
+                <div class="form-group">
+                    <label asp-for="Intro" class="form-label">Intro text</label>
+                    <textarea asp-for="Intro" class="form-control" rows="2"></textarea>
+                </div>
+                <div class="form-group">
+                    <label asp-for="BufferPercent" class="form-label">Buffer (%)</label>
+                    <input asp-for="BufferPercent" type="number" step="0.5" min="0" max="50" class="form-control" style="max-width:8rem" />
+                    <div class="form-text">The customer is told to buy the due amount plus this percentage, so the provider's fee and the network fee don't leave the invoice short.</div>
+                    <span asp-validation-for="BufferPercent" class="text-danger"></span>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3 class="mb-3">Region detection</h3>
+                <div class="form-check mb-3">
+                    <input asp-for="GeoLookupEnabled" type="checkbox" class="form-check-input" />
+                    <label asp-for="GeoLookupEnabled" class="form-check-label">Look up the customer's country from their IP address</label>
+                </div>
+                <div class="form-group">
+                    <label asp-for="GeoLookupUrl" class="form-label">Lookup URL</label>
+                    <input asp-for="GeoLookupUrl" class="form-control" />
+                    <div class="form-text">
+                        A GET endpoint that returns the two-letter country code, as plain text or JSON (<code>country_code</code>, <code>countryCode</code> or <code>country</code>). <code>{ip}</code> is replaced with the customer's IP.
+                        Results are cached for 24 hours. EU = EU-27, EEA, UK and Switzerland. When the lookup fails, the browser's timezone is used as a fallback.
+                    </div>
+                    <span asp-validation-for="GeoLookupUrl" class="text-danger"></span>
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <div class="d-flex align-items-center justify-content-between mb-3">
+                    <h3 class="mb-0">Providers</h3>
+                    <div class="d-flex gap-2">
+                        <button type="submit" name="command" value="reset-providers" class="btn btn-outline-secondary btn-sm">Reset to defaults</button>
+                        <button type="button" id="AddProvider" class="btn btn-secondary btn-sm">Add provider</button>
+                    </div>
+                </div>
+                <p class="text-secondary">
+                    Each provider is shown only to customers in its regions and only for its payment methods. Most providers require an API key or partner ID, and
+                    MoonPay, Paybis and Mercuryo require a <strong>secret</strong> to sign the link when the wallet address is pre-filled; the signature is computed on this server and the secret never reaches the browser.
+                    Placeholders in the URL: <code>{address}</code> <code>{btc}</code> <code>{fiat}</code> <code>{currency}</code> <code>{currency_lower}</code> <code>{apiKey}</code> <code>{store}</code> <code>{invoiceId}</code> <code>{returnUrl}</code>.
+                </p>
+
+                <div id="ProviderList">
+                    @for (var i = 0; i < Model.Providers.Count; i++)
+                    {
+                        var p = Model.Providers[i];
+                        var k = i.ToString();
+                        <div class="fr-provider card mb-3">
+                            <div class="card-body">
+                                <input type="hidden" name="Providers.Index" value="@k" />
+                                <input type="hidden" name="Providers[@k].Id" value="@p.Id" />
+                                <div class="row g-3">
+                                    <div class="col-md-4">
+                                        <label class="form-label">Name</label>
+                                        <input name="Providers[@k].Name" value="@p.Name" class="form-control" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label">Order</label>
+                                        <input name="Providers[@k].Order" value="@p.Order" type="number" class="form-control" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Signing</label>
+                                        <select name="Providers[@k].Signing" class="form-select">
+                                            @foreach (var s in signings)
+                                            {
+                                                <option value="@s" selected="@(s == p.Signing)">@s</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="col-md-3 d-flex align-items-end justify-content-between">
+                                        <div class="form-check">
+                                            <input type="hidden" name="Providers[@k].Enabled" value="false" />
+                                            <input type="checkbox" name="Providers[@k].Enabled" value="true" class="form-check-input" id="en_@k" checked="@p.Enabled" />
+                                            <label class="form-check-label" for="en_@k">Enabled</label>
+                                        </div>
+                                        <button type="button" class="btn btn-link text-danger p-0" data-remove>Remove</button>
+                                    </div>
+                                    <div class="col-12">
+                                        <label class="form-label">URL template</label>
+                                        <input name="Providers[@k].UrlTemplate" value="@p.UrlTemplate" class="form-control font-monospace" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">API key / partner ID <small class="text-muted">({apiKey})</small></label>
+                                        <input name="Providers[@k].ApiKey" value="@p.ApiKey" class="form-control" autocomplete="off" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label">Secret <small class="text-muted">(signing only)</small></label>
+                                        <div class="input-group">
+                                            <input name="Providers[@k].Secret" value="@p.Secret" type="password" class="form-control" autocomplete="new-password" />
+                                            <button type="button" class="btn btn-outline-secondary" data-toggle-secret>Show</button>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label d-block">Payment methods</label>
+                                        @foreach (var m in allMethods)
+                                        {
+                                            <div class="form-check form-check-inline">
+                                                <input type="checkbox" name="Providers[@k].Methods" value="@m.Method" class="form-check-input" id="m_@(k)_@m.Method" checked="@p.Methods.Contains(m.Method)" />
+                                                <label class="form-check-label" for="m_@(k)_@m.Method">@m.Label</label>
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label d-block">Regions</label>
+                                        @foreach (var r in allRegions)
+                                        {
+                                            <div class="form-check form-check-inline">
+                                                <input type="checkbox" name="Providers[@k].Regions" value="@r" class="form-check-input" id="r_@(k)_@r" checked="@p.Regions.Contains(r)" />
+                                                <label class="form-check-label" for="r_@(k)_@r">@r</label>
+                                            </div>
+                                        }
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label">Note under button</label>
+                                        <input name="Providers[@k].Note" value="@p.Note" class="form-control" />
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="settings-section">
+                <h3 class="mb-3">How to use from your shop</h3>
+                <p>
+                    Send the customer to the normal BTCPay checkout link. To open the panel on a specific payment method, add a hash to the link:
+                </p>
+                <ul class="mb-3">
+                    @foreach (var m in allMethods)
+                    {
+                        <li><code>@(checkoutExample)#@m.Slug</code> &rarr; @m.Label</li>
+                    }
+                </ul>
+                <p class="mb-0">
+                    <code>?method=credit-card</code> works too. Add <code>?region=eu</code> or <code>?region=us</code> to override the detected region, which is handy for testing.
+                </p>
+            </div>
+        </div>
+    </div>
+</form>
+
+<template id="ProviderTemplate">
+    <div class="fr-provider card mb-3">
+        <div class="card-body">
+            <input type="hidden" name="Providers.Index" value="__KEY__" />
+            <input type="hidden" name="Providers[__KEY__].Id" value="" />
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Name</label>
+                    <input name="Providers[__KEY__].Name" class="form-control" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Order</label>
+                    <input name="Providers[__KEY__].Order" value="@(Model.Providers.Count == 0 ? 0 : Model.Providers.Max(p => p.Order) + 1)" type="number" class="form-control" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Signing</label>
+                    <select name="Providers[__KEY__].Signing" class="form-select">
+                        @foreach (var s in signings)
+                        {
+                            <option value="@s">@s</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3 d-flex align-items-end justify-content-between">
+                    <div class="form-check">
+                        <input type="hidden" name="Providers[__KEY__].Enabled" value="false" />
+                        <input type="checkbox" name="Providers[__KEY__].Enabled" value="true" class="form-check-input" id="en___KEY__" checked />
+                        <label class="form-check-label" for="en___KEY__">Enabled</label>
+                    </div>
+                    <button type="button" class="btn btn-link text-danger p-0" data-remove>Remove</button>
+                </div>
+                <div class="col-12">
+                    <label class="form-label">URL template</label>
+                    <input name="Providers[__KEY__].UrlTemplate" class="form-control font-monospace" placeholder="https://example.com/buy?apiKey={apiKey}&amp;address={address}&amp;amount={fiat}&amp;currency={currency}" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">API key / partner ID <small class="text-muted">({apiKey})</small></label>
+                    <input name="Providers[__KEY__].ApiKey" class="form-control" autocomplete="off" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Secret <small class="text-muted">(signing only)</small></label>
+                    <div class="input-group">
+                        <input name="Providers[__KEY__].Secret" type="password" class="form-control" autocomplete="new-password" />
+                        <button type="button" class="btn btn-outline-secondary" data-toggle-secret>Show</button>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label d-block">Payment methods</label>
+                    @foreach (var m in allMethods)
+                    {
+                        <div class="form-check form-check-inline">
+                            <input type="checkbox" name="Providers[__KEY__].Methods" value="@m.Method" class="form-check-input" id="m___KEY___@m.Method" />
+                            <label class="form-check-label" for="m___KEY___@m.Method">@m.Label</label>
+                        </div>
+                    }
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label d-block">Regions</label>
+                    @foreach (var r in allRegions)
+                    {
+                        <div class="form-check form-check-inline">
+                            <input type="checkbox" name="Providers[__KEY__].Regions" value="@r" class="form-check-input" id="r___KEY___@r" checked />
+                            <label class="form-check-label" for="r___KEY___@r">@r</label>
+                        </div>
+                    }
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Note under button</label>
+                    <input name="Providers[__KEY__].Note" class="form-control" />
+                </div>
+            </div>
+        </div>
+    </div>
+</template>

@@ -1,0 +1,9 @@
+@using BTCPayServer.Client
+@model BTCPayServer.Components.MainNav.MainNavViewModel
+<li class="nav-item nav-item-sub" permission="@Policies.CanModifyStoreSettings">
+    <a layout-menu-item="@Plugin.Area"
+       asp-area="@Plugin.Area"
+       asp-controller="FiatRamp"
+       asp-action="Settings"
+       asp-route-storeId="@Model.Store.Id">Fiat on-ramp</a>
+</li>

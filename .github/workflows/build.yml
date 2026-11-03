@@ -1,0 +1,53 @@
+name: Build plugin
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  PLUGIN: BTCPayServer.Plugins.FiatRamp
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build plugin (Release)
+        run: dotnet build src/$PLUGIN/$PLUGIN.csproj --configuration Release
+
+      - name: Run tests
+        run: dotnet test tests/$PLUGIN.Tests/$PLUGIN.Tests.csproj --configuration Release
+        env:
+          PLAYWRIGHT_HEADLESS: "true"
+
+      - name: Pack .btcpay
+        run: |
+          dotnet run --project submodules/btcpayserver/BTCPayServer.PluginPacker/BTCPayServer.PluginPacker.csproj -- \
+            src/$PLUGIN/bin/Release/net10.0 $PLUGIN artifacts
+          find artifacts -type f | sort
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PLUGIN }}
+          path: artifacts/**
+
+      - name: Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/**/*.btcpay
+            artifacts/**/*.btcpay.json
+            artifacts/**/SHA256SUMS
