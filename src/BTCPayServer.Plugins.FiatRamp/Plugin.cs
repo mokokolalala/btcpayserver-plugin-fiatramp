@@ -27,8 +27,8 @@ public class Plugin : BaseBTCPayServerPlugin
         // Store settings page, listed in the store's "Plugins" navigation section
         services.AddUIExtension("store-integrations-nav", $"{ViewsDirectory}/NavExtension.cshtml");
 
-        // Checkout: register the Vue component at the end of the page, mount it under the on-chain address
+        // Checkout: registers the Vue component and mounts it under the on-chain address (see CheckoutEnd.cshtml
+        // for why the mount is done from script rather than the checkout-bitcoin-post-content extension point).
         services.AddUIExtension("checkout-end", $"{ViewsDirectory}/CheckoutEnd.cshtml");
-        services.AddUIExtension("checkout-bitcoin-post-content", $"{ViewsDirectory}/CheckoutBitcoinPostContent.cshtml");
     }
 }

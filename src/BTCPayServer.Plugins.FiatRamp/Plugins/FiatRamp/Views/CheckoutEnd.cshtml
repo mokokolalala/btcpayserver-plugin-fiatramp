@@ -124,6 +124,20 @@
 (function () {
     const FIATRAMP_CONFIG = @Safe.Json(config);
 
+    // Mount point. We append the element to the on-chain checkout template ourselves instead of using the
+    // "checkout-bitcoin-post-content" extension point: the core NFC plugin renders its tag there self-closing
+    // (<lnurl-withdraw-checkout ... />), which HTML parsers don't honour, so anything rendered after it ends up
+    // inside that component as slot content and is never instantiated. Runs before Vue initialises (i18n loads first).
+    (function mount() {
+        const tpl = document.getElementById('BitcoinCheckoutBody');
+        const root = tpl && (tpl.content || tpl);
+        const box = root && root.querySelector('.payment-box');
+        if (!box || box.querySelector(':scope > fiatramp-checkout')) return;
+        const el = document.createElement('fiatramp-checkout');
+        el.setAttribute(':model', 'model');
+        box.appendChild(el);
+    })();
+
     function normalizeRegion(value) {
         const v = (value || '').toString().trim().toLowerCase();
         if (v === 'eu' || v === 'europe') return 'EU';
