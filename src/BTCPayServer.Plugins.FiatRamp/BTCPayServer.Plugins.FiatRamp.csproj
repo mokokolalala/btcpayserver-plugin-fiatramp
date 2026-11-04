@@ -5,7 +5,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <Product>Fiat on-ramp</Product>
     <Description>Lets customers who have no Bitcoin buy it with a card, Apple Pay, Google Pay, PayPal, bank transfer or cash at an on-ramp (MoonPay, Transak, Ramp, Mercuryo, Banxa, Paybis...) and have it sent straight to the invoice address. Providers are filtered by the customer's region and the payment method chosen from the checkout URL.</Description>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
