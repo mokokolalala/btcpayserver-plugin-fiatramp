@@ -1,12 +1,13 @@
 # Fiat on-ramp plugin for BTCPay Server
 
-Customers who don't own Bitcoin yet can buy it with a **credit card, Apple Pay, Google Pay, PayPal, bank transfer or cash** at an on-ramp provider and have it sent straight to the invoice address. The plugin adds a panel to the on-chain Bitcoin checkout, below *Pay in wallet*:
+Customers who don't own Bitcoin yet can buy it with a **credit card, Apple Pay, Google Pay, PayPal, bank transfer or cash** at an on-ramp site and send it to the invoice address. The plugin adds a walkthrough to the on-chain Bitcoin checkout:
 
-- the address, the BTC amount and the fiat amount, each with a copy button (ramps ask for the fiat amount);
-- a "buy at least X" notice with a configurable buffer, so the provider's fee and the network fee don't leave the invoice short;
-- buttons to the providers that serve the customer's **region** (EU / US / other, detected from the IP address) and the chosen **payment method**.
+- provider cards for the customer's **region** (EU / US / other, detected from the IP address) and the chosen **payment method**;
+- a **step slider** per provider: one screen at a time, with a screenshot, arrows and swipe, a Copy button on the step that needs the amount or the address, and an "Open provider" button;
+- a **"you receive" check**: before paying, the customer types the amount the provider says it will send; the page says whether that covers the invoice or how much more to buy;
+- a "buy at least X" amount with a configurable buffer, so the provider's fee and the network fee don't leave the invoice short.
 
-BTCPay keeps doing what it already does: the page updates by itself when the purchase lands, and a short payment shows as partially paid with the remaining amount.
+No partner keys are needed: providers are plain public links, with the amount filled into the link where the site accepts it, and the customer pastes the address. BTCPay keeps doing what it already does: the page updates by itself when the purchase lands, and a short payment shows as partially paid with the remaining amount.
 
 ## Install
 
@@ -19,14 +20,14 @@ BTCPay keeps doing what it already does: the page updates by itself when the pur
 In the store, open **Plugins → Fiat on-ramp**.
 
 1. Tick **Enabled**.
-2. For each provider you want to offer, enter its **API key / partner ID** and, where required, its **secret**, then tick *Enabled*. Providers without the keys they need are not shown to customers.
-3. Adjust the regions and payment methods per provider, the buffer percentage and the texts. **Save**.
+2. Go through the providers: untick the ones you don't want, adjust regions and payment methods, and edit the **steps**. Each step has a text, an optional screenshot URL (https), what to copy on that step (the fiat amount, the BTC amount or the address), and flags for the *Open provider* button and the *you receive* check. Steps without a screenshot show a drawn stand-in. Real screenshots make the walkthrough much better: take them on a phone from your own account at the provider, put them somewhere public (BTCPay's file storage, your site, a GitHub repo) and paste the URLs.
+3. Set the buffer percentage and the texts. **Save**.
 
-The provider list ships with sensible defaults (MoonPay, Transak, Ramp, Mercuryo, Banxa, Paybis, Guardarian, plus a Bitcoin-ATM locator and Azteco vouchers for cash). *Reset to defaults* restores it and keeps the keys you typed.
+The provider list ships with defaults (MoonPay, Paybis, Ramp, Mercuryo, Transak, Guardarian, plus a Bitcoin-ATM locator and Azteco vouchers for cash) and a seven-step walkthrough each. The MoonPay amount parameters are verified; the others are best-effort and worth a click to check. *Reset to defaults* restores the list.
 
-### Provider URLs and signing
+### Provider links and placeholders
 
-Each provider is a URL template. Placeholders are replaced with the invoice's values and URL-encoded:
+Each provider is a link template. Placeholders are replaced with the invoice's values and URL-encoded:
 
 | Placeholder | Value |
 |---|---|
@@ -39,14 +40,21 @@ Each provider is a URL template. Placeholders are replaced with the invoice's va
 | `{invoiceId}` | invoice id |
 | `{returnUrl}` | the checkout page URL |
 
-Most ramps require a **signature** when the wallet address is pre-filled. The plugin computes it on the server, so the secret never reaches the browser. Supported schemes: `MoonPay` (base64 HMAC-SHA256 of the query string), `Mercuryo` (SHA-512 of address + secret), `Paybis` and two generic HMAC-SHA256 variants (hex / base64). Check the exact scheme in your provider contract; it is set per provider.
+If a provider has given you a partner key, it goes in the provider's *Partner key and signing* section, and `{apiKey}` and a pre-filled `{address}` can be used in the link. Ramps that pre-fill the wallet address require a **signature**; the plugin computes it on the server, so the secret never reaches the browser. Supported schemes: `MoonPay` (base64 HMAC-SHA256 of the query string), `Mercuryo` (SHA-512 of address + secret), `Paybis` and two generic HMAC-SHA256 variants (hex / base64).
 
-Provider buttons link to `/plugins/fiatramp/go/{invoiceId}/{providerId}` on your server, which builds and signs the provider URL at click time and redirects.
+The *Open provider* button links to `/plugins/fiatramp/go/{invoiceId}/{providerId}` on your server, which fills the live amount into the link (and signs it when configured) and redirects.
 
 ### Two modes
 
 - **No method in the link**: BTCPay's regular Bitcoin checkout, with a small "Don't have Bitcoin?" offer under it that leads into the walkthrough.
-- **Method in the link** (`#credit-card` and friends): the walkthrough takes the top of the page and the Bitcoin pieces collapse behind "Already have Bitcoin?". The customer sees the fiat amount, picks a provider for their region, gets that provider's step-by-step guide (editable per provider in settings, with an optional screenshot), the exact amount to buy including fees, the address to paste, and a live status while the page watches the blockchain. This is the mode to use when a shop lists "Credit card", "Apple Pay" and so on as separate payment methods that all land on BTCPay.
+- **Method in the link** (`#credit-card` and friends): the walkthrough takes the top of the page and the Bitcoin pieces collapse behind "Already have Bitcoin?". The customer sees the fiat amount, picks a provider for their region and goes through that provider's steps one screen at a time. Under the slider, a "Your details" card keeps the amount to buy and the address with Copy buttons, and a live status box watches the blockchain. This is the mode to use when a shop lists "Credit card", "Apple Pay" and so on as separate payment methods that all land on BTCPay.
+
+### Fees and short payments
+
+Providers take their fee out of what the customer pays, so the amount that arrives is less than the amount bought. Two safeguards:
+
+- before paying, the *you receive* step compares the provider's quoted BTC with the invoice's due amount and tells the customer how much more to buy if it falls short;
+- after paying, BTCPay's own partial-payment handling shows what arrived and what is still missing, with the same address to send the rest to.
 
 Because buying at a provider takes longer than paying from a wallet, raise the store's invoice expiration (Store Settings → Checkout experience → *Invoice expires if the full amount has not been paid after …*) to at least 60–120 minutes for stores that use this.
 

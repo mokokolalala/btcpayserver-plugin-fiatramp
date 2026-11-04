@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using BTCPayServer.Plugins.FiatRamp.Services;
@@ -97,5 +98,36 @@ public class PluginTests
         foreach (var r in Enum.GetValues<Region>())
             Assert.Contains(s.Providers, p => p.Regions.Contains(r));
         Assert.Equal(s.Providers.Count, s.Providers.Select(p => p.Id).Distinct().Count());
+    }
+
+    [Fact]
+    public void Default_providers_are_usable_without_keys_and_have_a_walkthrough()
+    {
+        foreach (var p in FiatRampSettings.DefaultProviders())
+        {
+            Assert.True(p.IsUsable, p.Id);
+            Assert.DoesNotContain("{apiKey}", p.UrlTemplate);
+            var steps = p.EffectiveSteps().ToList();
+            Assert.NotEmpty(steps);
+            Assert.Equal(1, steps.Count(s => s.Open));
+            Assert.Contains(steps, s => s.Copy == "address");
+            Assert.Contains(steps, s => s.Copy == "fiat");
+            Assert.True(steps.Count(s => s.Check) <= 1, p.Id);
+            Assert.All(steps, s => Assert.True(s.ImageUrl is null || s.ImageUrl.StartsWith("https://")));
+        }
+    }
+
+    [Fact]
+    public void Old_guide_lines_become_steps_until_steps_are_saved()
+    {
+        var p = new ProviderConfig { Guide = "Open it\nPay\n\nDone", GuideImageUrl = "https://x.test/a.png" };
+        var steps = p.EffectiveSteps().ToList();
+        Assert.Equal(new[] { "Open it", "Pay", "Done" }, steps.Select(s => s.Text));
+        Assert.True(steps[0].Open);
+        Assert.Equal("https://x.test/a.png", steps[0].ImageUrl);
+        Assert.Null(steps[1].ImageUrl);
+
+        p.Steps.Add(new GuideStep { Text = "Only this" });
+        Assert.Single(p.EffectiveSteps());
     }
 }

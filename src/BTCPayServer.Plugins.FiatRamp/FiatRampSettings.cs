@@ -59,6 +59,28 @@ public static class PayMethodInfo
     };
 }
 
+/// <summary>One screen of the walkthrough shown to the customer: text, an optional screenshot, and what to copy or do on it.</summary>
+public class GuideStep
+{
+    /// <summary>Placeholders: {buy} (fiat amount incl. buffer), {btc}, {address}, {address_short}, {provider}.</summary>
+    public string Text { get; set; } = "";
+
+    /// <summary>Screenshot of the provider's screen for this step (absolute https URL). Without one, a drawn stand-in is shown.</summary>
+    public string? ImageUrl { get; set; }
+
+    /// <summary>What this step asks the customer to paste: "fiat", "btc" or "address". Shows the value with a Copy button.</summary>
+    public string? Copy { get; set; }
+
+    /// <summary>Show the "Open provider" button on this step.</summary>
+    public bool Open { get; set; }
+
+    /// <summary>Show the "the provider says you receive ... BTC" check, which compares with the amount due.</summary>
+    public bool Check { get; set; }
+
+    /// <summary>Picks the drawn stand-in when there is no screenshot: open, signin, amount, address, check, pay, wait, info.</summary>
+    public string? Kind { get; set; }
+}
+
 public class ProviderConfig
 {
     /// <summary>Stable slug used in URLs. Generated from the name when left empty.</summary>
@@ -93,6 +115,17 @@ public class ProviderConfig
 
     /// <summary>Optional screenshot shown above the steps (absolute https URL, e.g. an image uploaded to BTCPay's file storage).</summary>
     public string? GuideImageUrl { get; set; }
+
+    /// <summary>The walkthrough, one screen per step. When empty, <see cref="Guide"/> lines are used as plain text steps.</summary>
+    public List<GuideStep> Steps { get; set; } = new();
+
+    /// <summary>The steps the checkout shows: <see cref="Steps"/>, or the <see cref="Guide"/> lines turned into steps (first one opens the provider).</summary>
+    public IEnumerable<GuideStep> EffectiveSteps()
+    {
+        if (Steps.Count > 0) return Steps;
+        var lines = (Guide ?? "").Split('\n', System.StringSplitOptions.RemoveEmptyEntries | System.StringSplitOptions.TrimEntries);
+        return lines.Select((l, i) => new GuideStep { Text = l, Open = i == 0, ImageUrl = i == 0 ? GuideImageUrl : null });
+    }
 
     public int Order { get; set; }
 
@@ -130,14 +163,21 @@ public class FiatRampSettings
 
     public static FiatRampSettings CreateDefault() => new() { Providers = DefaultProviders() };
 
-    /// <summary>Generic walkthrough for a hosted on-ramp widget; providers override the first line.</summary>
-    static string WidgetGuide(string provider, string payWith) =>
-        $"Tap the button below. {provider} opens in a new tab with the amount and this order's address already filled in.\n" +
-        $"Sign in or create an account. New customers are asked for an email, a phone number and a photo of an ID; this is normal and usually takes a few minutes.\n" +
-        "Check the amount is at least {buy} and the coin is Bitcoin (BTC). Change the amount if the provider shows less.\n" +
-        "Check the wallet address matches {address_short}. If the field is empty, paste the address from step 3.\n" +
-        $"Pay with {payWith}.\n" +
-        "Wait for the provider to say the purchase is complete, then come back to this page. It updates by itself.";
+    /// <summary>The walkthrough for a hosted on-ramp site that the customer uses with their own account (no partner key, no pre-filled address).</summary>
+    static List<GuideStep> SiteSteps(string provider, string payWith, bool amountInUrl, string? signInImage = null) => new()
+    {
+        new() { Kind = "open", Open = true, Text = amountInUrl
+            ? $"Tap the button below. {provider} opens in a new tab with the amount already filled in. Keep this page open too; you will come back to it."
+            : $"Tap the button below. {provider} opens in a new tab. Keep this page open too; you will come back to it." },
+        new() { Kind = "signin", ImageUrl = signInImage, Text = $"Sign in, or create an account if you don't have one. First time? {provider} asks for a phone number and a photo of your ID. That is normal and takes a few minutes." },
+        new() { Kind = "amount", Copy = "fiat", Text = "Choose Bitcoin (BTC) and make sure the amount is at least this. If the field is empty or shows less, paste this number." },
+        new() { Kind = "address", Copy = "address", Text = $"When {provider} asks where to send the Bitcoin (\"wallet address\" or \"receiving address\"), paste this address. Don't let it create a wallet for you." },
+        new() { Kind = "check", Check = true, Text = $"Before you pay, {provider} shows what you receive after its fees. Type that number here so we can check it covers the order." },
+        new() { Kind = "pay", Text = $"Pay with {payWith}." },
+        new() { Kind = "wait", Text = $"When {provider} says the purchase is complete, come back to this page. The status at the bottom updates by itself, usually within 10 to 30 minutes." },
+    };
+
+    const string GuideImages = "https://raw.githubusercontent.com/mokokolalala/btcpayserver-plugin-fiatramp/master/docs/guides/";
 
     public static List<ProviderConfig> DefaultProviders()
     {
@@ -148,69 +188,57 @@ public class FiatRampSettings
         {
             new()
             {
-                Id = "moonpay", Name = "MoonPay", Order = order++,
-                UrlTemplate = "https://buy.moonpay.com/?apiKey={apiKey}&currencyCode=btc&walletAddress={address}&baseCurrencyCode={currency_lower}&baseCurrencyAmount={fiat}&showWalletAddressForm=true",
-                Signing = UrlSigning.MoonPay,
+                Id = "moonpay", Name = "MoonPay", Order = order++, Enabled = true,
+                UrlTemplate = "https://buy.moonpay.com/?currencyCode=btc&baseCurrencyCode={currency_lower}&baseCurrencyAmount={fiat}",
                 Methods = cardish.Concat(new[] { PayMethod.PayPal, PayMethod.Bank }).ToList(),
                 Regions = all.ToList(),
                 Note = "Card, Apple/Google Pay, PayPal, bank",
-                Guide = WidgetGuide("MoonPay", "your card, Apple Pay, Google Pay, PayPal or a bank transfer")
+                Steps = SiteSteps("MoonPay", "your card, Apple Pay, Google Pay, PayPal or a bank transfer", true, GuideImages + "moonpay-1-signin.jpg")
             },
             new()
             {
-                Id = "transak", Name = "Transak", Order = order++,
-                UrlTemplate = "https://global.transak.com/?apiKey={apiKey}&cryptoCurrencyCode=BTC&network=mainnet&walletAddress={address}&fiatCurrency={currency}&fiatAmount={fiat}&disableWalletAddressForm=true",
+                Id = "paybis", Name = "Paybis", Order = order++, Enabled = true,
+                UrlTemplate = "https://paybis.com/?currencyCodeFrom={currency}&currencyCodeTo=BTC&amountFrom={fiat}",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
-                Regions = all.ToList(),
+                Regions = new() { Region.EU, Region.US },
                 Note = "Card, Apple/Google Pay, bank",
-                Guide = WidgetGuide("Transak", "your card, Apple Pay, Google Pay or a bank transfer")
+                Steps = SiteSteps("Paybis", "your card, Apple Pay, Google Pay or a bank transfer", true)
             },
             new()
             {
-                Id = "ramp", Name = "Ramp", Order = order++,
-                UrlTemplate = "https://app.rampnetwork.com/?hostApiKey={apiKey}&hostAppName={store}&userAddress={address}&enabledCryptoAssets=BTC_BTC&defaultAsset=BTC_BTC&fiatCurrency={currency}&fiatValue={fiat}",
+                Id = "ramp", Name = "Ramp", Order = order++, Enabled = true,
+                UrlTemplate = "https://app.ramp.network/?defaultAsset=BTC_BTC&fiatCurrency={currency}&fiatValue={fiat}",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU, Region.US },
                 Note = "Card, Apple/Google Pay, SEPA",
-                Guide = WidgetGuide("Ramp", "your card, Apple Pay, Google Pay or a SEPA transfer")
+                Steps = SiteSteps("Ramp", "your card, Apple Pay, Google Pay or a SEPA transfer", true)
             },
             new()
             {
-                Id = "mercuryo", Name = "Mercuryo", Order = order++,
-                UrlTemplate = "https://exchange.mercuryo.io/?widget_id={apiKey}&type=buy&currency=BTC&address={address}&fiat_currency={currency}&fiat_amount={fiat}&fix_currency=true&fix_fiat_currency=true&fix_fiat_amount=true",
-                Signing = UrlSigning.Mercuryo,
+                Id = "mercuryo", Name = "Mercuryo", Order = order++, Enabled = true,
+                UrlTemplate = "https://exchange.mercuryo.io/?type=buy&currency=BTC&fiat_currency={currency}&fiat_amount={fiat}",
                 Methods = cardish.ToList(),
                 Regions = new() { Region.EU, Region.Other },
                 Note = "Card, Apple/Google Pay",
-                Guide = WidgetGuide("Mercuryo", "your card, Apple Pay or Google Pay")
+                Steps = SiteSteps("Mercuryo", "your card, Apple Pay or Google Pay", true)
             },
             new()
             {
-                Id = "banxa", Name = "Banxa", Order = order++,
-                UrlTemplate = "https://{apiKey}.banxa.com/?coinType=BTC&blockchain=BTC&fiatType={currency}&fiatAmount={fiat}&walletAddress={address}",
+                Id = "transak", Name = "Transak", Order = order++, Enabled = true,
+                UrlTemplate = "https://global.transak.com/?cryptoCurrencyCode=BTC&network=mainnet&fiatCurrency={currency}&fiatAmount={fiat}",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = all.ToList(),
-                Note = "{apiKey} = your Banxa partner subdomain",
-                Guide = WidgetGuide("Banxa", "your card, Apple Pay, Google Pay or a bank transfer")
-            },
-            new()
-            {
-                Id = "paybis", Name = "Paybis", Order = order++,
-                UrlTemplate = "https://widget.paybis.com/?partnerId={apiKey}&cryptoAddress={address}&currencyCodeTo=BTC&currencyCodeFrom={currency}&amountFrom={fiat}",
-                Signing = UrlSigning.Paybis,
-                Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
-                Regions = new() { Region.EU, Region.US },
                 Note = "Card, Apple/Google Pay, bank",
-                Guide = WidgetGuide("Paybis", "your card, Apple Pay, Google Pay or a bank transfer")
+                Steps = SiteSteps("Transak", "your card, Apple Pay, Google Pay or a bank transfer", true)
             },
             new()
             {
-                Id = "guardarian", Name = "Guardarian", Order = order++,
-                UrlTemplate = "https://guardarian.com/calculator/v1?partner_api_token={apiKey}&default_crypto_currency=BTC&default_fiat_currency={currency}&default_fiat_amount={fiat}&payout_address={address}",
+                Id = "guardarian", Name = "Guardarian", Order = order++, Enabled = true,
+                UrlTemplate = "https://guardarian.com/buy-btc",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU },
                 Note = "Card, SEPA · EU",
-                Guide = WidgetGuide("Guardarian", "your card or a SEPA transfer")
+                Steps = SiteSteps("Guardarian", "your card or a SEPA transfer", false)
             },
             new()
             {
@@ -219,10 +247,14 @@ public class FiatRampSettings
                 Methods = new() { PayMethod.Cash },
                 Regions = all.ToList(),
                 Note = "Scan this page's QR code at the ATM",
-                Guide = "Tap the button below to find a Bitcoin ATM near you. Pick one that sells Bitcoin.\n" +
-                        "At the ATM choose Buy Bitcoin and, when asked for your wallet, scan the QR code from step 3 of this page (tap Show QR code). Do not let the ATM create a wallet for you.\n" +
-                        "Insert cash for at least {buy}. ATM fees are high, often 10 to 20 percent, so round up.\n" +
-                        "Keep the receipt. Come back to this page; the payment shows up once the ATM sends it, usually within an hour."
+                Steps = new()
+                {
+                    new() { Kind = "open", Open = true, Text = "Tap the button below to find a Bitcoin ATM near you. Pick one that sells Bitcoin, and note its fee." },
+                    new() { Kind = "address", Copy = "address", Text = "At the ATM choose Buy Bitcoin. When it asks for your wallet, scan this page's QR code (tap Show QR code) or type the address. Do not let the ATM create a wallet for you." },
+                    new() { Kind = "amount", Copy = "fiat", Text = "Insert cash for at least this amount. ATM fees are high, often 10 to 20 percent, so round up." },
+                    new() { Kind = "check", Check = true, Text = "Before you confirm, the ATM shows how much Bitcoin you get. Type it here to check it covers the order." },
+                    new() { Kind = "wait", Text = "Keep the receipt and come back to this page. The payment shows up once the ATM sends it, usually within an hour." },
+                }
             },
             new()
             {
@@ -231,10 +263,13 @@ public class FiatRampSettings
                 Methods = new() { PayMethod.Cash },
                 Regions = all.ToList(),
                 Note = "Buy a voucher with cash, redeem to this address",
-                Guide = "Tap the button below and use the map to find a shop near you that sells Azteco Bitcoin vouchers.\n" +
-                        "Buy a voucher for at least {buy} in cash.\n" +
-                        "Redeem it on azte.co: enter the voucher code and paste the address from step 3 ({address_short}).\n" +
-                        "Come back to this page. It updates by itself once the voucher is redeemed."
+                Steps = new()
+                {
+                    new() { Kind = "open", Open = true, Text = "Tap the button below and use the map to find a shop near you that sells Azteco Bitcoin vouchers." },
+                    new() { Kind = "amount", Copy = "fiat", Text = "Buy a voucher for at least this amount, in cash." },
+                    new() { Kind = "address", Copy = "address", Text = "Redeem it on azte.co: enter the voucher code and paste this address." },
+                    new() { Kind = "wait", Text = "Come back to this page. It updates by itself once the voucher is redeemed." },
+                }
             },
         };
     }

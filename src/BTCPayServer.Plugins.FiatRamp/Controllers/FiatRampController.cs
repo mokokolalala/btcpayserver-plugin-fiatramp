@@ -62,7 +62,7 @@ public class FiatRampController(
             TempData.SetStatusMessageModel(new StatusMessageModel
             {
                 Severity = StatusMessageModel.StatusSeverity.Success,
-                Message = "Provider list reset to defaults. Your API keys were kept."
+                Message = "Provider list reset to defaults. Any partner keys you had entered were kept."
             });
             return RedirectToAction(nameof(Settings), new { storeId });
         }
@@ -79,6 +79,19 @@ public class FiatRampController(
                 p.Note = Blank(p.Note);
                 p.Guide = Blank(p.Guide?.Replace("\r\n", "\n"));
                 p.GuideImageUrl = Blank(p.GuideImageUrl);
+                p.Steps = (p.Steps ?? new())
+                    .Where(s => !string.IsNullOrWhiteSpace(s.Text))
+                    .Select(s =>
+                    {
+                        s.Text = s.Text.Trim();
+                        s.ImageUrl = Blank(s.ImageUrl);
+                        s.Copy = Blank(s.Copy?.ToLowerInvariant()) is "fiat" or "btc" or "address" ? s.Copy!.ToLowerInvariant() : null;
+                        s.Kind = Blank(s.Kind?.ToLowerInvariant());
+                        return s;
+                    })
+                    .ToList();
+                // steps replace the old one-line-per-step guide once they have been saved
+                if (p.Steps.Count > 0) { p.Guide = null; p.GuideImageUrl = null; }
                 p.Id = Slug(string.IsNullOrWhiteSpace(p.Id) ? p.Name : p.Id);
                 if (string.IsNullOrWhiteSpace(p.Id)) p.Id = "provider-" + i;
                 p.Methods ??= new();
@@ -109,6 +122,13 @@ public class FiatRampController(
             }
             if (p.GuideImageUrl is not null && (!Uri.TryCreate(p.GuideImageUrl, UriKind.Absolute, out var img) || img.Scheme != Uri.UriSchemeHttps))
                 ModelState.AddModelError("", $"\"{p.Name}\": the screenshot must be an absolute https:// image URL.");
+            foreach (var s in p.Steps)
+            {
+                if (s.ImageUrl is not null && (!Uri.TryCreate(s.ImageUrl, UriKind.Absolute, out var si) || si.Scheme != Uri.UriSchemeHttps))
+                    ModelState.AddModelError("", $"\"{p.Name}\": a step screenshot must be an absolute https:// image URL.");
+            }
+            if (p.Enabled && p.Steps.Count(s => s.Open) == 0 && p.Steps.Count > 0)
+                ModelState.AddModelError("", $"\"{p.Name}\": one step should have the \"Open provider\" button, or the customer has no way to get there.");
         }
         if (vm.BufferPercent < 0 || vm.BufferPercent > 50)
             ModelState.AddModelError(nameof(vm.BufferPercent), "Buffer must be between 0 and 50 percent.");
