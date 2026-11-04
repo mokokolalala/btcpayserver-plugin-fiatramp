@@ -84,8 +84,10 @@
                 <div class="fiatramp__step-head"><h6>How to pay at <span v-text="current.name"></span></h6><span class="fiatramp__counter">Step <span v-text="slide + 1"></span> of <span v-text="current.steps.length"></span></span></div>
 
                 <div class="fiatramp__slider" tabindex="0" v-on:keydown.left.prevent="prev()" v-on:keydown.right.prevent="next()" v-on:touchstart="touchStart" v-on:touchend="touchEnd" aria-roledescription="carousel">
-                    <div class="fiatramp__shot">
-                        <img :src="step.image || illus(step)" :alt="'Step ' + (slide + 1)" />
+                    <div class="fiatramp__shot" :class="{ 'fiatramp__shot--video': media.type !== 'image' }">
+                        <img v-if="media.type === 'image'" :src="media.src" :alt="'Step ' + (slide + 1)" />
+                        <video v-else-if="media.type === 'video'" :key="media.src" :src="media.src" controls playsinline preload="metadata"></video>
+                        <iframe v-else :key="media.src" :src="media.src" :title="'Step ' + (slide + 1) + ' video'" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
                         <button type="button" class="fiatramp__arrow fiatramp__arrow--prev" v-on:click="prev()" :disabled="slide === 0" aria-label="Previous step">&lsaquo;</button>
                         <button type="button" class="fiatramp__arrow fiatramp__arrow--next" v-on:click="next()" :disabled="slide === current.steps.length - 1" aria-label="Next step">&rsaquo;</button>
                     </div>
@@ -211,7 +213,8 @@
     /* the walkthrough slider */
     .fiatramp__slider { border: 1px solid var(--btcpay-body-border-medium); border-radius: var(--border-radius); background: var(--btcpay-body-bg); overflow: hidden; }
     .fiatramp__shot { position: relative; height: 230px; background: #14161c; }
-    .fiatramp__shot img { width: 100%; height: 100%; object-fit: contain; display: block; }
+    .fiatramp__shot img, .fiatramp__shot video, .fiatramp__shot iframe { width: 100%; height: 100%; object-fit: contain; display: block; border: 0; background: #000; }
+    .fiatramp__shot--video .fiatramp__arrow { display: none; } /* a player has its own controls; the dots and Back / Next buttons still navigate */
     .fiatramp__arrow { position: absolute; top: 50%; transform: translateY(-50%); width: 2.2rem; height: 2.2rem; border-radius: 50%; border: none; background: rgba(255,255,255,.92); color: #111; font-size: 1.6rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
     .fiatramp__arrow--prev { left: .5rem; } .fiatramp__arrow--next { right: .5rem; }
     .fiatramp__arrow:disabled { opacity: .25; cursor: default; }
@@ -406,6 +409,7 @@
                 return p && p.steps && p.steps.length ? p : null;
             },
             step() { return this.current ? this.current.steps[Math.min(this.slide, this.current.steps.length - 1)] : null; },
+            media() { return this.step ? this.mediaFor(this.step) : { type: 'image', src: '' }; },
             methodLabel() {
                 const m = (this.cfg.methods || []).find(m => m.id === this.method);
                 return m ? m.label : 'card';
@@ -511,6 +515,23 @@
                 if (key === 'address') return this.model.address || '';
                 if (key === 'btc') return this.fmtBtc(this.dueBtc);
                 return this.fiatDue > 0 ? this.fmt(this.fiatBuy) : this.fmtBtc(this.dueBtc);
+            },
+            // A step's media URL can be an image, an .mp4/.webm file, or a YouTube/Vimeo page (turned into an embed).
+            mediaFor(step) {
+                const url = (step.image || '').trim();
+                if (!url) return { type: 'image', src: this.illus(step) };
+                let u;
+                try { u = new URL(url); } catch (e) { return { type: 'image', src: url }; }
+                const host = u.hostname.replace(/^www\./, '');
+                if (/\.(mp4|webm|mov|m4v)$/i.test(u.pathname)) return { type: 'video', src: url };
+                if (host === 'youtube.com' || host === 'm.youtube.com' || host === 'youtube-nocookie.com') {
+                    const id = u.searchParams.get('v') || (u.pathname.match(/\/(?:embed|shorts)\/([\w-]+)/) || [])[1];
+                    if (id) return { type: 'embed', src: `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1` };
+                }
+                if (host === 'youtu.be') { const id = u.pathname.slice(1).split('/')[0]; if (id) return { type: 'embed', src: `https://www.youtube-nocookie.com/embed/${id}?rel=0&modestbranding=1` }; }
+                if (host === 'vimeo.com') { const id = (u.pathname.match(/\/(\d+)/) || [])[1]; if (id) return { type: 'embed', src: `https://player.vimeo.com/video/${id}?dnt=1` }; }
+                if (host === 'player.vimeo.com') return { type: 'embed', src: url };
+                return { type: 'image', src: url };
             },
             illus(step) {
                 const kind = step.copy === 'fiat' ? 'amount' : step.copy === 'address' ? 'address' : step.check ? 'check' : step.open ? 'open' : (step.kind || 'info');

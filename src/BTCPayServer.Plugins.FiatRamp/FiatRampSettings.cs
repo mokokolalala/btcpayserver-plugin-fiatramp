@@ -65,7 +65,10 @@ public class GuideStep
     /// <summary>Placeholders: {buy} (fiat amount incl. buffer), {btc}, {address}, {address_short}, {provider}.</summary>
     public string Text { get; set; } = "";
 
-    /// <summary>Screenshot of the provider's screen for this step (absolute https URL). Without one, a drawn stand-in is shown.</summary>
+    /// <summary>
+    /// Screenshot or video of the provider's screen for this step (absolute https URL): an image, an .mp4/.webm file,
+    /// or a YouTube / Vimeo link (embedded). Without one, a drawn stand-in is shown.
+    /// </summary>
     public string? ImageUrl { get; set; }
 
     /// <summary>What this step asks the customer to paste: "fiat", "btc" or "address". Shows the value with a Copy button.</summary>
@@ -164,13 +167,13 @@ public class FiatRampSettings
     public static FiatRampSettings CreateDefault() => new() { Providers = DefaultProviders() };
 
     /// <summary>The walkthrough for a hosted on-ramp site that the customer uses with their own account (no partner key, no pre-filled address).</summary>
-    static List<GuideStep> SiteSteps(string provider, string payWith, bool amountInUrl, string? signInImage = null) => new()
+    static List<GuideStep> SiteSteps(string provider, string payWith, bool amountInUrl, string? signInImage = null, string? amountImage = null) => new()
     {
         new() { Kind = "open", Open = true, Text = amountInUrl
             ? $"Tap the button below. {provider} opens in a new tab with the amount already filled in. Keep this page open too; you will come back to it."
             : $"Tap the button below. {provider} opens in a new tab. Keep this page open too; you will come back to it." },
         new() { Kind = "signin", ImageUrl = signInImage, Text = $"Sign in, or create an account if you don't have one. First time? {provider} asks for a phone number and a photo of your ID. That is normal and takes a few minutes." },
-        new() { Kind = "amount", Copy = "fiat", Text = "Choose Bitcoin (BTC) and make sure the amount is at least this. If the field is empty or shows less, paste this number." },
+        new() { Kind = "amount", Copy = "fiat", ImageUrl = amountImage, Text = "Choose Bitcoin (BTC) and make sure the amount is at least this. If the field is empty or shows less, paste this number." },
         new() { Kind = "address", Copy = "address", Text = $"When {provider} asks where to send the Bitcoin (\"wallet address\" or \"receiving address\"), paste this address. Don't let it create a wallet for you." },
         new() { Kind = "check", Check = true, Text = $"Before you pay, {provider} shows what you receive after its fees. Type that number here so we can check it covers the order." },
         new() { Kind = "pay", Text = $"Pay with {payWith}." },
@@ -202,16 +205,16 @@ public class FiatRampSettings
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU, Region.US },
                 Note = "Card, Apple/Google Pay, bank",
-                Steps = SiteSteps("Paybis", "your card, Apple Pay, Google Pay or a bank transfer", true)
+                Steps = SiteSteps("Paybis", "your card, Apple Pay, Google Pay or a bank transfer", false, null, GuideImages + "paybis-amount.jpg")
             },
             new()
             {
                 Id = "ramp", Name = "Ramp", Order = order++, Enabled = true,
-                UrlTemplate = "https://app.ramp.network/?defaultAsset=BTC_BTC&fiatCurrency={currency}&fiatValue={fiat}",
+                UrlTemplate = "https://rampnetwork.com/buy-crypto",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU, Region.US },
                 Note = "Card, Apple/Google Pay, SEPA",
-                Steps = SiteSteps("Ramp", "your card, Apple Pay, Google Pay or a SEPA transfer", true)
+                Steps = SiteSteps("Ramp", "your card, Apple Pay, Google Pay or a SEPA transfer", false)
             },
             new()
             {
@@ -220,7 +223,7 @@ public class FiatRampSettings
                 Methods = cardish.ToList(),
                 Regions = new() { Region.EU, Region.Other },
                 Note = "Card, Apple/Google Pay",
-                Steps = SiteSteps("Mercuryo", "your card, Apple Pay or Google Pay", true)
+                Steps = SiteSteps("Mercuryo", "your card, Apple Pay or Google Pay", false, null, GuideImages + "mercuryo-amount.jpg")
             },
             new()
             {
@@ -229,7 +232,7 @@ public class FiatRampSettings
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = all.ToList(),
                 Note = "Card, Apple/Google Pay, bank",
-                Steps = SiteSteps("Transak", "your card, Apple Pay, Google Pay or a bank transfer", true)
+                Steps = SiteSteps("Transak", "your card, Apple Pay, Google Pay or a bank transfer", false, null, GuideImages + "transak-amount.jpg")
             },
             new()
             {
@@ -238,7 +241,7 @@ public class FiatRampSettings
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU },
                 Note = "Card, SEPA · EU",
-                Steps = SiteSteps("Guardarian", "your card or a SEPA transfer", false)
+                Steps = SiteSteps("Guardarian", "your card or a SEPA transfer", false, null, GuideImages + "guardarian-amount.jpg")
             },
             new()
             {

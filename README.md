@@ -20,10 +20,10 @@ No partner keys are needed: providers are plain public links, with the amount fi
 In the store, open **Plugins → Fiat on-ramp**.
 
 1. Tick **Enabled**.
-2. Go through the providers: untick the ones you don't want, adjust regions and payment methods, and edit the **steps**. Each step has a text, an optional screenshot URL (https), what to copy on that step (the fiat amount, the BTC amount or the address), and flags for the *Open provider* button and the *you receive* check. Steps without a screenshot show a drawn stand-in. Real screenshots make the walkthrough much better: take them on a phone from your own account at the provider, put them somewhere public (BTCPay's file storage, your site, a GitHub repo) and paste the URLs.
+2. Go through the providers: untick the ones you don't want, adjust regions and payment methods, and edit the **steps**. Each step has a text, an optional screenshot **or video** URL (https; an image, an `.mp4`/`.webm` file, or a YouTube/Vimeo link, which is embedded), what to copy on that step (the fiat amount, the BTC amount or the address), and flags for the *Open provider* button and the *you receive* check. Steps without a screenshot show a drawn stand-in. Real screenshots make the walkthrough much better: take them on a phone from your own account at the provider, put them somewhere public (BTCPay's file storage, your site, a GitHub repo) and paste the URLs.
 3. Set the buffer percentage and the texts. **Save**.
 
-The provider list ships with defaults (MoonPay, Paybis, Ramp, Mercuryo, Transak, Guardarian, plus a Bitcoin-ATM locator and Azteco vouchers for cash) and a seven-step walkthrough each. The MoonPay amount parameters are verified; the others are best-effort and worth a click to check. *Reset to defaults* restores the list.
+The provider list ships with defaults (MoonPay, Paybis, Ramp, Mercuryo, Transak, Guardarian, plus a Bitcoin-ATM locator and Azteco vouchers for cash) and a seven-step walkthrough each. MoonPay takes the amount from the link; Paybis, Mercuryo, Transak and Guardarian ignore it, so their amount step shows a real screenshot of their amount screen and the customer types it. Ramp's widget needs a partner key, so its default is Ramp's public buy page. *Reset to defaults* restores the list.
 
 ### Provider links and placeholders
 
