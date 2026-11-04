@@ -177,6 +177,15 @@
                                         <label class="form-label">Note under button</label>
                                         <input name="Providers[@k].Note" value="@p.Note" class="form-control" />
                                     </div>
+                                    <div class="col-md-8">
+                                        <label class="form-label">Step-by-step guide <small class="text-muted">(one step per line; {buy} {btc} {address} {address_short})</small></label>
+                                        <textarea name="Providers[@k].Guide" class="form-control" rows="4">@p.Guide</textarea>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label">Screenshot URL <small class="text-muted">(optional, https)</small></label>
+                                        <input name="Providers[@k].GuideImageUrl" value="@p.GuideImageUrl" class="form-control" placeholder="https://..." />
+                                        <div class="form-text">Shown above the steps when the customer opens this provider.</div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -272,6 +281,14 @@
                 <div class="col-md-3">
                     <label class="form-label">Note under button</label>
                     <input name="Providers[__KEY__].Note" class="form-control" />
+                </div>
+                <div class="col-md-8">
+                    <label class="form-label">Step-by-step guide <small class="text-muted">(one step per line; {buy} {btc} {address} {address_short})</small></label>
+                    <textarea name="Providers[__KEY__].Guide" class="form-control" rows="4"></textarea>
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Screenshot URL <small class="text-muted">(optional, https)</small></label>
+                    <input name="Providers[__KEY__].GuideImageUrl" class="form-control" placeholder="https://..." />
                 </div>
             </div>
         </div>

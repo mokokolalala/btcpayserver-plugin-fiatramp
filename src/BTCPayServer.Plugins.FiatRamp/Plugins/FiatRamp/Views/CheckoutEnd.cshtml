@@ -42,101 +42,184 @@
                     note = p.Note,
                     methods = p.Methods.Select(m => m.ToString()),
                     regions = p.Regions.Select(r => r.ToString()),
+                    guide = (p.Guide ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries),
+                    guideImageUrl = p.GuideImageUrl,
                     url = Url.Action("Go", "FiatRamp", new { area = Plugin.Area, invoiceId = Model.InvoiceId, providerId = p.Id })
                 })
         };
     }
 }
 <template id="fiatramp-template">
-    <div v-if="visible" class="fiatramp" id="FiatRamp">
-        <h6 v-text="headline"></h6>
-        <div class="fiatramp__intro" v-text="cfg.intro"></div>
+    <div v-if="visible" class="fiatramp" :class="{ 'fiatramp--focus': focus }" id="FiatRamp">
 
-        <div v-if="methodChoices.length > 1" class="fiatramp__methods">
-            <button v-for="m in methodChoices" :key="m.id" type="button" class="fiatramp__method"
-                    :class="{ active: method === m.id }" v-on:click="select(m.id)" v-text="m.label"></button>
-        </div>
-
-        <dl class="fiatramp__rows">
-            <div>
-                <dt>Address</dt>
-                <dd><span class="val" v-text="model.address"></span><button type="button" class="fiatramp__copy" :class="{ ok: copied.address }" v-on:click="copy(model.address, 'address')" v-text="copied.address ? 'Copied!' : 'Copy'"></button></dd>
+        <!-- ============ FOCUS MODE: the customer arrived to pay with a card, Apple/Google Pay, PayPal, bank or cash ============ -->
+        <template v-if="focus">
+            <div class="fiatramp__hero">
+                <div class="fiatramp__hero-label">Pay with <span v-text="methodLabel"></span></div>
+                <div class="fiatramp__hero-amount" v-if="fiatDue > 0"><span v-text="fmt(fiatDue)"></span> <small v-text="cfg.fiatCurrency"></small></div>
+                <div class="fiatramp__hero-amount" v-else><span v-text="model.due"></span> <small v-text="model.paymentMethodCurrency"></small></div>
+                <div class="fiatramp__hero-sub">Takes about 10 minutes. You buy Bitcoin for this amount at a provider and it is sent straight to this order. No wallet needed.</div>
             </div>
-            <div>
-                <dt>Amount</dt>
-                <dd><span class="val hl" v-text="`${model.due} ${model.paymentMethodCurrency}`"></span><button type="button" class="fiatramp__copy" :class="{ ok: copied.btc }" v-on:click="copy(asNumber(model.due), 'btc')" v-text="copied.btc ? 'Copied!' : 'Copy'"></button></dd>
+
+            <div class="fiatramp__methods" role="tablist">
+                <button v-for="m in methodChoices" :key="m.id" type="button" class="fiatramp__method" role="tab"
+                        :class="{ active: method === m.id }" :aria-selected="method === m.id ? 'true' : 'false'"
+                        v-on:click="select(m.id)" v-text="m.label"></button>
             </div>
-            <div v-if="fiatDue > 0">
-                <dt v-text="`In ${cfg.fiatCurrency}`"></dt>
-                <dd><span class="val" v-text="`${fmt(fiatDue)} ${cfg.fiatCurrency}`"></span><button type="button" class="fiatramp__copy" :class="{ ok: copied.fiat }" v-on:click="copy(fmt(fiatDue), 'fiat')" v-text="copied.fiat ? 'Copied!' : 'Copy'"></button></dd>
+
+            <!-- Step 1: provider -->
+            <section class="fiatramp__step">
+                <div class="fiatramp__step-head"><span class="fiatramp__num">1</span><h6>Choose where to buy</h6><span class="fiatramp__region" v-if="region !== 'Unknown'" v-text="regionLabel"></span></div>
+                <div v-if="providers.length" class="fiatramp__providers">
+                    <div v-for="p in providers" :key="p.id" class="fiatramp__provider" :class="{ open: activeProvider === p.id }">
+                        <button type="button" class="fiatramp__provider-row" v-on:click="activeProvider = activeProvider === p.id ? null : p.id" :aria-expanded="activeProvider === p.id ? 'true' : 'false'">
+                            <span class="fiatramp__provider-name" v-text="p.name"></span>
+                            <small v-if="p.note" v-text="p.note"></small>
+                            <span class="fiatramp__chev" aria-hidden="true"></span>
+                        </button>
+                        <div v-if="activeProvider === p.id" class="fiatramp__guide">
+                            <img v-if="p.guideImageUrl" :src="p.guideImageUrl" :alt="'How to buy at ' + p.name" class="fiatramp__guide-img" />
+                            <ol v-if="p.guide && p.guide.length">
+                                <li v-for="(line, i) in p.guide" :key="i" v-text="fill(line)"></li>
+                            </ol>
+                            <a class="btn btn-primary rounded-pill w-100 fiatramp__go" :href="href(p)" target="_blank" rel="noopener noreferrer">Open <span v-text="p.name"></span> in a new tab</a>
+                            <div class="fiatramp__tiny">Keep this page open and come back to it once the provider says the purchase is complete.</div>
+                        </div>
+                    </div>
+                </div>
+                <div v-else class="fiatramp__empty">No provider is available for <span v-text="methodLabel"></span> in your region yet. Try another method above.</div>
+            </section>
+
+            <!-- Step 2: amount -->
+            <section class="fiatramp__step">
+                <div class="fiatramp__step-head"><span class="fiatramp__num">2</span><h6>Buy this much</h6></div>
+                <div class="fiatramp__big-row">
+                    <div>
+                        <div class="fiatramp__big" v-if="fiatDue > 0"><span v-text="fmt(fiatBuy)"></span> <small v-text="cfg.fiatCurrency"></small></div>
+                        <div class="fiatramp__big" v-else><span v-text="model.due"></span> <small v-text="model.paymentMethodCurrency"></small></div>
+                        <div class="fiatramp__tiny" v-if="fiatDue > 0">
+                            That is <strong v-text="`${model.due} ${model.paymentMethodCurrency}`"></strong> plus <span v-text="cfg.bufferPercent"></span>% to cover the provider's fee and the network fee, so the full amount arrives. Buying a little more is fine; buying less leaves the order unpaid.
+                        </div>
+                    </div>
+                    <button type="button" class="fiatramp__copy" :class="{ ok: copied.fiat }" v-on:click="copy(fiatDue > 0 ? fmt(fiatBuy) : asNumber(model.due), 'fiat')" v-text="copied.fiat ? 'Copied' : 'Copy'"></button>
+                </div>
+                <div class="fiatramp__tiny">Coin: <strong>Bitcoin (BTC)</strong> on the <strong>Bitcoin network</strong>. Not Lightning, not "BTC on Ethereum".</div>
+            </section>
+
+            <!-- Step 3: address -->
+            <section class="fiatramp__step">
+                <div class="fiatramp__step-head"><span class="fiatramp__num">3</span><h6>Send it to this address</h6></div>
+                <div class="fiatramp__tiny">When the provider asks for the <em>wallet address</em> or <em>receiving address</em>, paste this. Most providers above already have it filled in; check that it matches.</div>
+                <div class="fiatramp__addr-row">
+                    <code class="fiatramp__addr" v-text="model.address"></code>
+                    <button type="button" class="fiatramp__copy" :class="{ ok: copied.address }" v-on:click="copy(model.address, 'address')" v-text="copied.address ? 'Copied' : 'Copy'"></button>
+                </div>
+                <button type="button" class="fiatramp__link" v-on:click="showQr = !showQr" v-text="showQr ? 'Hide QR code' : 'Show QR code (to scan from the provider\'s app)'"></button>
+                <div v-if="showQr" class="fiatramp__qr"><qrcode :value="model.address" tag="div" :options="qrOptions"></qrcode></div>
+            </section>
+
+            <!-- Step 4: wait -->
+            <section class="fiatramp__step">
+                <div class="fiatramp__step-head"><span class="fiatramp__num">4</span><h6>Come back here and wait</h6></div>
+                <div class="fiatramp__status" :class="statusClass">
+                    <span class="fiatramp__dot" aria-hidden="true"></span>
+                    <span v-text="statusText"></span>
+                </div>
+                <div class="fiatramp__tiny">This page checks the blockchain every few seconds and updates by itself. A purchase usually shows up within 10 to 30 minutes of the provider confirming it.
+                    <template v-if="model.storeSupportUrl"> Nothing after an hour? <a :href="model.storeSupportUrl" target="_blank" rel="noopener">Contact us</a> with your order number.</template>
+                </div>
+            </section>
+
+            <button type="button" class="fiatramp__core-toggle" v-on:click="toggleCore" :aria-expanded="coreOpen ? 'true' : 'false'">
+                <span v-text="coreOpen ? 'Hide the Bitcoin wallet option' : 'Already have Bitcoin? Pay from your wallet instead'"></span>
+            </button>
+        </template>
+
+        <!-- ============ DEFAULT MODE: the regular Bitcoin checkout, with a compact on-ramp offer under it ============ -->
+        <template v-else>
+            <h6 v-text="cfg.headline"></h6>
+            <div class="fiatramp__intro" v-text="cfg.intro"></div>
+            <div class="fiatramp__methods">
+                <button v-for="m in methodChoices" :key="m.id" type="button" class="fiatramp__method" v-on:click="enterFocus(m.id)" v-text="m.label"></button>
             </div>
-        </dl>
-
-        <div v-if="fiatDue > 0 && cfg.bufferPercent > 0" class="fiatramp__buffer">
-            <span>&#9888;&#65039;</span>
-            <span>Providers deduct their fee and the network fee before sending. Buy at least <strong v-text="`${fmt(fiatBuy)} ${cfg.fiatCurrency}`"></strong> (+{{cfg.bufferPercent}}%) so the full amount arrives.</span>
-        </div>
-
-        <div v-if="providers.length" class="fiatramp__providers">
-            <a v-for="p in providers" :key="p.id" class="fiatramp__provider" :href="href(p)" target="_blank" rel="noopener noreferrer">
-                <span class="name" v-text="p.name"></span>
-                <small v-if="p.note" v-text="p.note"></small>
-            </a>
-        </div>
-        <div v-else class="fiatramp__empty">No provider available for <span v-text="methodLabel"></span> in your region. Try another payment method above.</div>
-
-        <div class="fiatramp__foot">
-            This page keeps watching the blockchain and updates by itself once the purchase is sent.
-            <template v-if="model.storeSupportUrl"> Sent it and nothing shows after 30 minutes? <a :href="model.storeSupportUrl" target="_blank" rel="noopener">Contact us</a>.</template>
-        </div>
+        </template>
     </div>
 </template>
 
 <style>
+    /* Layout: the panel is a column of "steps" inside BTCPay's tile; colors come from BTCPay's theme variables. */
     .fiatramp { margin-top: var(--btcpay-space-l); padding-top: var(--btcpay-space-l); border-top: 1px solid var(--btcpay-body-border-light); text-align: start; }
-    .fiatramp h6 { margin-bottom: var(--btcpay-space-xs); font-weight: var(--btcpay-font-weight-semibold); text-align: center; }
+    .fiatramp--focus { margin-top: 0; padding-top: 0; border-top: none; }
+    .fiatramp h6 { margin: 0; font-weight: var(--btcpay-font-weight-semibold); }
+    .fiatramp > h6 { margin-bottom: var(--btcpay-space-xs); text-align: center; }
     .fiatramp__intro { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); text-align: center; margin-bottom: var(--btcpay-space-m); }
+
+    .fiatramp__hero { text-align: center; padding: var(--btcpay-space-s) 0 var(--btcpay-space-m); }
+    .fiatramp__hero-label { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); text-transform: uppercase; letter-spacing: .08em; }
+    .fiatramp__hero-amount { font-size: 2.2rem; font-weight: var(--btcpay-font-weight-semibold); line-height: 1.15; margin: .15rem 0; font-variant-numeric: tabular-nums; }
+    .fiatramp__hero-amount small { font-size: 1rem; color: var(--btcpay-body-text-muted); font-weight: var(--btcpay-font-weight-normal); }
+    .fiatramp__hero-sub { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); max-width: 34ch; margin: 0 auto; line-height: 1.45; }
+
     .fiatramp__methods { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--btcpay-space-xs); margin-bottom: var(--btcpay-space-m); }
-    .fiatramp__method { padding: .25rem .75rem; font-size: var(--btcpay-font-size-s); border: 1px solid var(--btcpay-body-border-medium); border-radius: 2rem; background: none; color: var(--btcpay-body-text-muted); cursor: pointer; }
+    .fiatramp__method { padding: .3rem .8rem; font-size: var(--btcpay-font-size-s); border: 1px solid var(--btcpay-body-border-medium); border-radius: 2rem; background: none; color: var(--btcpay-body-text-muted); cursor: pointer; }
     .fiatramp__method:hover { color: var(--btcpay-body-text); border-color: var(--btcpay-body-text-muted); }
     .fiatramp__method.active { background: var(--btcpay-primary); border-color: var(--btcpay-primary); color: var(--btcpay-white); }
-    .fiatramp__rows { margin: 0 0 var(--btcpay-space-m); }
-    .fiatramp__rows > div { display: flex; align-items: center; justify-content: space-between; gap: var(--btcpay-space-s); padding: var(--btcpay-space-xs) 0; border-bottom: 1px solid var(--btcpay-body-border-light); }
-    .fiatramp__rows > div:last-child { border-bottom: none; }
-    .fiatramp__rows dt { margin: 0; font-weight: var(--btcpay-font-weight-normal); color: var(--btcpay-body-text-muted); white-space: nowrap; }
-    .fiatramp__rows dd { margin: 0; display: flex; align-items: center; gap: var(--btcpay-space-xs); min-width: 0; max-width: none; font-family: var(--btcpay-font-monospace, ui-monospace, monospace); font-size: var(--btcpay-font-size-s); text-align: end; }
-    .fiatramp__rows dd .val { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .fiatramp__rows dd .val.hl { color: var(--btcpay-primary); font-weight: var(--btcpay-font-weight-semibold); font-size: var(--btcpay-body-font-size); }
-    .fiatramp__copy { flex-shrink: 0; padding: .1rem .55rem; font-size: .75rem; line-height: 1.4; border: 1px solid var(--btcpay-body-border-medium); border-radius: 1rem; background: none; color: var(--btcpay-body-text-muted); cursor: pointer; }
+    .fiatramp__method:focus-visible, .fiatramp__copy:focus-visible, .fiatramp__provider-row:focus-visible, .fiatramp__link:focus-visible, .fiatramp__core-toggle:focus-visible { outline: 2px solid var(--btcpay-primary); outline-offset: 2px; }
+
+    .fiatramp__step { padding: var(--btcpay-space-m) 0; border-top: 1px solid var(--btcpay-body-border-light); }
+    .fiatramp__step-head { display: flex; align-items: center; gap: var(--btcpay-space-s); margin-bottom: var(--btcpay-space-s); }
+    .fiatramp__num { flex: 0 0 1.5rem; width: 1.5rem; height: 1.5rem; border-radius: 50%; background: var(--btcpay-primary); color: var(--btcpay-white); font-size: .8rem; font-weight: var(--btcpay-font-weight-semibold); display: inline-flex; align-items: center; justify-content: center; }
+    .fiatramp__region { margin-inline-start: auto; font-size: .7rem; color: var(--btcpay-body-text-muted); border: 1px solid var(--btcpay-body-border-light); border-radius: 1rem; padding: .05rem .5rem; white-space: nowrap; }
+    .fiatramp__tiny { font-size: .78rem; color: var(--btcpay-body-text-muted); line-height: 1.45; margin-top: var(--btcpay-space-xs); }
+    .fiatramp__tiny a { color: inherit; }
+    .fiatramp__empty { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); padding: var(--btcpay-space-s) 0; }
+
+    .fiatramp__providers { display: flex; flex-direction: column; gap: var(--btcpay-space-xs); }
+    .fiatramp__provider { border: 1px solid var(--btcpay-body-border-medium); border-radius: var(--border-radius); background: var(--btcpay-body-bg); overflow: hidden; transition: border-color .15s; }
+    .fiatramp__provider.open, .fiatramp__provider:hover { border-color: var(--btcpay-primary); }
+    .fiatramp__provider-row { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "name chev" "note chev"; align-items: center; gap: 0 var(--btcpay-space-s); width: 100%; padding: .6rem .8rem; background: none; border: none; color: var(--btcpay-body-text); text-align: start; cursor: pointer; }
+    .fiatramp__provider-name { grid-area: name; font-weight: var(--btcpay-font-weight-semibold); }
+    .fiatramp__provider-row small { grid-area: note; color: var(--btcpay-body-text-muted); font-size: .74rem; }
+    .fiatramp__chev { grid-area: chev; width: .55rem; height: .55rem; border-right: 2px solid var(--btcpay-body-text-muted); border-bottom: 2px solid var(--btcpay-body-text-muted); transform: rotate(45deg); transition: transform .15s; margin-inline-end: .2rem; }
+    .fiatramp__provider.open .fiatramp__chev { transform: rotate(-135deg); }
+    .fiatramp__guide { padding: 0 .8rem .8rem; border-top: 1px dashed var(--btcpay-body-border-light); }
+    .fiatramp__guide ol { margin: var(--btcpay-space-s) 0; padding-inline-start: 1.2rem; font-size: var(--btcpay-font-size-s); line-height: 1.5; }
+    .fiatramp__guide li + li { margin-top: .25rem; }
+    .fiatramp__guide-img { display: block; max-width: 100%; border-radius: calc(var(--border-radius) - 2px); margin-top: var(--btcpay-space-s); border: 1px solid var(--btcpay-body-border-light); }
+    .fiatramp__go { margin-top: var(--btcpay-space-xs); }
+
+    .fiatramp__big-row { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--btcpay-space-s); }
+    .fiatramp__big { font-size: 1.5rem; font-weight: var(--btcpay-font-weight-semibold); color: var(--btcpay-primary); font-variant-numeric: tabular-nums; line-height: 1.2; }
+    .fiatramp__big small { font-size: .9rem; color: var(--btcpay-body-text-muted); font-weight: var(--btcpay-font-weight-normal); }
+    .fiatramp__copy { flex-shrink: 0; padding: .25rem .8rem; font-size: .78rem; line-height: 1.4; border: 1px solid var(--btcpay-body-border-medium); border-radius: 1rem; background: none; color: var(--btcpay-body-text); cursor: pointer; }
     .fiatramp__copy:hover, .fiatramp__copy.ok { border-color: var(--btcpay-success); color: var(--btcpay-success); }
-    .fiatramp__buffer { display: flex; gap: var(--btcpay-space-xs); align-items: flex-start; padding: var(--btcpay-space-s) var(--btcpay-space-m); margin-bottom: var(--btcpay-space-m); border-radius: var(--border-radius); background: var(--btcpay-warning-bg, rgba(255,193,7,.12)); color: var(--btcpay-body-text); font-size: var(--btcpay-font-size-s); line-height: 1.4; }
-    .fiatramp__buffer strong { white-space: nowrap; }
-    .fiatramp__providers { display: grid; grid-template-columns: 1fr 1fr; gap: var(--btcpay-space-s); }
-    .fiatramp__provider { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .1rem; padding: .6rem .5rem; border: 1px solid var(--btcpay-body-border-medium); border-radius: var(--border-radius); background: var(--btcpay-body-bg); color: var(--btcpay-body-text); text-decoration: none; font-weight: var(--btcpay-font-weight-semibold); font-size: var(--btcpay-font-size-s); text-align: center; transition: border-color .15s, transform .1s; }
-    .fiatramp__provider:hover { border-color: var(--btcpay-primary); color: var(--btcpay-primary); transform: translateY(-1px); }
-    .fiatramp__provider small { font-weight: normal; color: var(--btcpay-body-text-muted); font-size: .7rem; line-height: 1.2; }
-    .fiatramp__empty { font-size: var(--btcpay-font-size-s); color: var(--btcpay-body-text-muted); text-align: center; padding: var(--btcpay-space-s); }
-    .fiatramp__foot { margin-top: var(--btcpay-space-s); font-size: .75rem; color: var(--btcpay-body-text-muted); text-align: center; line-height: 1.4; }
-    .fiatramp__foot a { color: inherit; }
+    .fiatramp__addr-row { display: flex; align-items: center; gap: var(--btcpay-space-s); margin-top: var(--btcpay-space-s); }
+    .fiatramp__addr { flex: 1; min-width: 0; font-size: .8rem; word-break: break-all; line-height: 1.4; color: var(--btcpay-body-text); background: var(--btcpay-body-bg); border: 1px solid var(--btcpay-body-border-light); border-radius: var(--border-radius); padding: .5rem .6rem; }
+    .fiatramp__link { display: block; margin-top: var(--btcpay-space-xs); background: none; border: none; padding: 0; font-size: .78rem; color: var(--btcpay-primary); cursor: pointer; text-decoration: underline; }
+    .fiatramp__qr { margin: var(--btcpay-space-s) auto 0; width: 160px; max-width: 100%; padding: 8px; background: #fff; border-radius: var(--border-radius); }
+    .fiatramp__qr svg, .fiatramp__qr canvas { width: 100%; height: auto; display: block; }
+
+    .fiatramp__status { display: flex; align-items: center; gap: var(--btcpay-space-s); padding: .6rem .8rem; border-radius: var(--border-radius); background: var(--btcpay-body-bg); border: 1px solid var(--btcpay-body-border-light); font-size: var(--btcpay-font-size-s); }
+    .fiatramp__dot { width: .55rem; height: .55rem; border-radius: 50%; background: var(--btcpay-body-text-muted); animation: fiatramp-pulse 1.6s infinite; flex-shrink: 0; }
+    .fiatramp__status.seen { border-color: var(--btcpay-warning); } .fiatramp__status.seen .fiatramp__dot { background: var(--btcpay-warning); }
+    .fiatramp__status.partial { border-color: var(--btcpay-danger); } .fiatramp__status.partial .fiatramp__dot { background: var(--btcpay-danger); animation: none; }
+    @@keyframes fiatramp-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+    @@media (prefers-reduced-motion: reduce) { .fiatramp__dot { animation: none; } }
+
+    .fiatramp__core-toggle { display: block; width: 100%; margin-top: var(--btcpay-space-m); padding: .55rem; background: none; border: 1px dashed var(--btcpay-body-border-medium); border-radius: var(--border-radius); color: var(--btcpay-body-text-muted); font-size: var(--btcpay-font-size-s); cursor: pointer; }
+    .fiatramp__core-toggle:hover { color: var(--btcpay-body-text); border-color: var(--btcpay-body-text-muted); }
+
+    /* Focus mode re-arranges BTCPay's own page: the panel goes first, the Bitcoin pieces collapse until asked for. */
+    .payment-box.fiatramp-focus > :not(.fiatramp) { display: none !important; }
+    .payment-box.fiatramp-focus.fiatramp-core-open > :not(.fiatramp) { display: revert !important; }
+    .payment-box.fiatramp-focus.fiatramp-core-open > .fiatramp { border-bottom: 1px solid var(--btcpay-body-border-light); margin-bottom: var(--btcpay-space-l); }
+    #Checkout.fiatramp-focus #AmountDue, #Checkout.fiatramp-focus .payment-methods-wrapper { display: none !important; }
+    #Checkout.fiatramp-focus.fiatramp-core-open #AmountDue, #Checkout.fiatramp-focus.fiatramp-core-open .payment-methods-wrapper { display: revert !important; }
 </style>
 
 <script>
 (function () {
     const FIATRAMP_CONFIG = @Safe.Json(config);
-
-    // Mount point. We append the element to the on-chain checkout template ourselves instead of using the
-    // "checkout-bitcoin-post-content" extension point: the core NFC plugin renders its tag there self-closing
-    // (<lnurl-withdraw-checkout ... />), which HTML parsers don't honour, so anything rendered after it ends up
-    // inside that component as slot content and is never instantiated. Runs before Vue initialises (i18n loads first).
-    (function mount() {
-        const tpl = document.getElementById('BitcoinCheckoutBody');
-        const root = tpl && (tpl.content || tpl);
-        const box = root && root.querySelector('.payment-box');
-        if (!box || box.querySelector(':scope > fiatramp-checkout')) return;
-        const el = document.createElement('fiatramp-checkout');
-        el.setAttribute(':model', 'model');
-        box.appendChild(el);
-    })();
 
     function normalizeRegion(value) {
         const v = (value || '').toString().trim().toLowerCase();
@@ -172,16 +255,42 @@
         return null;
     }
 
+    // Mount point. We append the element to the on-chain checkout template ourselves instead of using the
+    // "checkout-bitcoin-post-content" extension point: the core NFC plugin renders its tag there self-closing
+    // (<lnurl-withdraw-checkout ... />), which HTML parsers don't honour, so anything rendered after it ends up
+    // inside that component as slot content and is never instantiated. Runs before Vue initialises (i18n loads first).
+    // When the link names a payment method, the panel is placed first and the page starts in focus mode.
+    const startFocused = FIATRAMP_CONFIG.enabled && !!methodFromUrl(FIATRAMP_CONFIG.methods || []);
+    (function mount() {
+        const tpl = document.getElementById('BitcoinCheckoutBody');
+        const root = tpl && (tpl.content || tpl);
+        const box = root && root.querySelector('.payment-box');
+        if (!box || box.querySelector(':scope > fiatramp-checkout')) return;
+        const el = document.createElement('fiatramp-checkout');
+        el.setAttribute(':model', 'model');
+        if (startFocused) {
+            box.classList.add('fiatramp-focus');
+            box.insertBefore(el, box.firstChild);
+        } else {
+            box.appendChild(el);
+        }
+    })();
+
     Vue.component('fiatramp-checkout', {
         template: '#fiatramp-template',
         props: { model: Object },
+        components: { qrcode: window.VueQrcode },
         data() {
             return {
                 cfg: FIATRAMP_CONFIG,
                 method: null,
-                preselected: false,
+                focus: false,
+                coreOpen: false,
+                activeProvider: null,
+                showQr: false,
                 tzRegion: null,
-                copied: { address: false, btc: false, fiat: false }
+                qrOptions: { margin: 0, width: 160, color: { dark: '#000', light: '#fff' } },
+                copied: { address: false, fiat: false }
             };
         },
         computed: {
@@ -197,6 +306,9 @@
                 if (this.cfg.region && this.cfg.region !== 'Unknown') return this.cfg.region;
                 return this.tzRegion || 'Unknown';
             },
+            regionLabel() {
+                return { EU: 'Europe', US: 'United States', Other: 'your region' }[this.region] || '';
+            },
             providersForRegion() {
                 const r = this.region;
                 return (this.cfg.providers || []).filter(p => r === 'Unknown' || !p.regions.length || p.regions.includes(r));
@@ -207,29 +319,40 @@
             providers() {
                 return this.providersForRegion.filter(p => !this.method || p.methods.includes(this.method));
             },
-            headline() {
-                if (!this.method) return this.cfg.headline;
-                return `Pay with ${this.methodLabel}`;
-            },
             methodLabel() {
                 const m = (this.cfg.methods || []).find(m => m.id === this.method);
-                return m ? m.label : 'this method';
+                return m ? m.label : 'card';
             },
             dueBtc() { return this.asNumber(this.model.due) || 0; },
             totalBtc() { return this.asNumber(this.model.orderAmount) || 0; },
+            paidBtc() { return this.asNumber(this.model.paid) || 0; },
             fiatDue() {
                 if (!this.cfg.fiatTotal || !this.totalBtc) return 0;
                 return this.cfg.fiatTotal * this.dueBtc / this.totalBtc;
             },
-            fiatBuy() { return this.fiatDue * (1 + (this.cfg.bufferPercent || 0) / 100); }
+            fiatBuy() { return this.fiatDue * (1 + (this.cfg.bufferPercent || 0) / 100); },
+            statusClass() {
+                if (this.paidBtc > 0 && this.dueBtc > 0) return 'partial';
+                if (this.model.status === 'Processing') return 'seen';
+                return 'waiting';
+            },
+            statusText() {
+                if (this.paidBtc > 0 && this.dueBtc > 0) {
+                    return `Received ${this.model.paid} ${this.model.paymentMethodCurrency}, still missing ${this.model.due} ${this.model.paymentMethodCurrency}. The provider's fee was probably taken out of the amount. Please send the missing part to the same address.`;
+                }
+                if (this.model.status === 'Processing') return 'Your Bitcoin is on its way. Waiting for the network to confirm it.';
+                return 'Watching the blockchain for your purchase. Nothing to do yet.';
+            }
         },
         mounted() {
             this.tzRegion = guessRegion();
             const m = methodFromUrl(this.cfg.methods || []);
             if (m) {
                 this.method = m;
-                this.preselected = true;
+                this.focus = true;
+                this.applyFocusClasses();
                 this.$nextTick(() => {
+                    if (this.providers.length === 1) this.activeProvider = this.providers[0].id;
                     const el = document.getElementById('FiatRamp');
                     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 });
@@ -238,7 +361,44 @@
         methods: {
             asNumber(val) { return val && parseFloat(val.toString().replace(/\s/g, '')); },
             fmt(x) { return (Math.round(x * 100) / 100).toFixed(2); },
-            select(id) { this.method = this.method === id ? null : id; },
+            select(id) {
+                this.method = id;
+                this.activeProvider = this.providers.length === 1 ? this.providers[0].id : null;
+            },
+            enterFocus(id) {
+                this.focus = true;
+                this.coreOpen = false;
+                this.select(id);
+                this.applyFocusClasses();
+                this.$nextTick(() => {
+                    const el = document.getElementById('FiatRamp');
+                    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                });
+            },
+            toggleCore() {
+                this.coreOpen = !this.coreOpen;
+                this.applyFocusClasses();
+            },
+            applyFocusClasses() {
+                // The Bitcoin pieces are BTCPay's own markup around this component, so they are shown or hidden by class.
+                const box = this.$el && this.$el.parentElement;
+                const page = document.getElementById('Checkout');
+                for (const el of [box, page]) {
+                    if (!el) continue;
+                    el.classList.toggle('fiatramp-focus', this.focus);
+                    el.classList.toggle('fiatramp-core-open', this.focus && this.coreOpen);
+                }
+                if (box && this.focus && box.firstElementChild !== this.$el) box.insertBefore(this.$el, box.firstChild);
+            },
+            fill(line) {
+                const buy = this.fiatDue > 0 ? `${this.fmt(this.fiatBuy)} ${this.cfg.fiatCurrency}` : `${this.model.due} ${this.model.paymentMethodCurrency}`;
+                const a = this.model.address || '';
+                return line
+                    .replace(/\{buy\}/g, buy)
+                    .replace(/\{btc\}/g, `${this.model.due} ${this.model.paymentMethodCurrency}`)
+                    .replace(/\{address\}/g, a)
+                    .replace(/\{address_short\}/g, a.length > 14 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a);
+            },
             href(p) {
                 const u = new URL(p.url, location.origin);
                 if (this.method) u.searchParams.set('method', this.method);

@@ -43,9 +43,16 @@ Most ramps require a **signature** when the wallet address is pre-filled. The pl
 
 Provider buttons link to `/plugins/fiatramp/go/{invoiceId}/{providerId}` on your server, which builds and signs the provider URL at click time and redirects.
 
+### Two modes
+
+- **No method in the link**: BTCPay's regular Bitcoin checkout, with a small "Don't have Bitcoin?" offer under it that leads into the walkthrough.
+- **Method in the link** (`#credit-card` and friends): the walkthrough takes the top of the page and the Bitcoin pieces collapse behind "Already have Bitcoin?". The customer sees the fiat amount, picks a provider for their region, gets that provider's step-by-step guide (editable per provider in settings, with an optional screenshot), the exact amount to buy including fees, the address to paste, and a live status while the page watches the blockchain. This is the mode to use when a shop lists "Credit card", "Apple Pay" and so on as separate payment methods that all land on BTCPay.
+
+Because buying at a provider takes longer than paying from a wallet, raise the store's invoice expiration (Store Settings → Checkout experience → *Invoice expires if the full amount has not been paid after …*) to at least 60–120 minutes for stores that use this.
+
 ### Payment method from the checkout link
 
-Send the customer to the normal checkout link with a hash to open the panel on a method:
+Send the customer to the normal checkout link with a hash to open the walkthrough on a method:
 
 ```
 https://your-btcpay/i/INVOICE_ID#credit-card

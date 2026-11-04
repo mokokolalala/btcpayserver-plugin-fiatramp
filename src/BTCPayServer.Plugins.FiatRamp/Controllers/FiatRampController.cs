@@ -77,6 +77,8 @@ public class FiatRampController(
                 p.ApiKey = Blank(p.ApiKey);
                 p.Secret = Blank(p.Secret);
                 p.Note = Blank(p.Note);
+                p.Guide = Blank(p.Guide?.Replace("\r\n", "\n"));
+                p.GuideImageUrl = Blank(p.GuideImageUrl);
                 p.Id = Slug(string.IsNullOrWhiteSpace(p.Id) ? p.Name : p.Id);
                 if (string.IsNullOrWhiteSpace(p.Id)) p.Id = "provider-" + i;
                 p.Methods ??= new();
@@ -105,6 +107,8 @@ public class FiatRampController(
                 if (!Uri.TryCreate(probe, UriKind.Absolute, out var u) || u.Scheme != Uri.UriSchemeHttps)
                     ModelState.AddModelError("", $"\"{p.Name}\": the URL must be an absolute https:// URL.");
             }
+            if (p.GuideImageUrl is not null && (!Uri.TryCreate(p.GuideImageUrl, UriKind.Absolute, out var img) || img.Scheme != Uri.UriSchemeHttps))
+                ModelState.AddModelError("", $"\"{p.Name}\": the screenshot must be an absolute https:// image URL.");
         }
         if (vm.BufferPercent < 0 || vm.BufferPercent > 50)
             ModelState.AddModelError(nameof(vm.BufferPercent), "Buffer must be between 0 and 50 percent.");

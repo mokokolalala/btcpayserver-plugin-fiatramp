@@ -84,6 +84,16 @@ public class ProviderConfig
 
     /// <summary>Short hint shown under the provider button, e.g. "Min. $30 · KYC".</summary>
     public string? Note { get; set; }
+
+    /// <summary>
+    /// Step-by-step instructions shown when the customer picks this provider, one step per line.
+    /// Placeholders: {buy} (fiat amount incl. buffer), {btc}, {address}, {address_short}.
+    /// </summary>
+    public string? Guide { get; set; }
+
+    /// <summary>Optional screenshot shown above the steps (absolute https URL, e.g. an image uploaded to BTCPay's file storage).</summary>
+    public string? GuideImageUrl { get; set; }
+
     public int Order { get; set; }
 
     [JsonIgnore]
@@ -120,6 +130,15 @@ public class FiatRampSettings
 
     public static FiatRampSettings CreateDefault() => new() { Providers = DefaultProviders() };
 
+    /// <summary>Generic walkthrough for a hosted on-ramp widget; providers override the first line.</summary>
+    static string WidgetGuide(string provider, string payWith) =>
+        $"Tap the button below. {provider} opens in a new tab with the amount and this order's address already filled in.\n" +
+        $"Sign in or create an account. New customers are asked for an email, a phone number and a photo of an ID; this is normal and usually takes a few minutes.\n" +
+        "Check the amount is at least {buy} and the coin is Bitcoin (BTC). Change the amount if the provider shows less.\n" +
+        "Check the wallet address matches {address_short}. If the field is empty, paste the address from step 3.\n" +
+        $"Pay with {payWith}.\n" +
+        "Wait for the provider to say the purchase is complete, then come back to this page. It updates by itself.";
+
     public static List<ProviderConfig> DefaultProviders()
     {
         var all = new[] { Region.EU, Region.US, Region.Other };
@@ -134,7 +153,8 @@ public class FiatRampSettings
                 Signing = UrlSigning.MoonPay,
                 Methods = cardish.Concat(new[] { PayMethod.PayPal, PayMethod.Bank }).ToList(),
                 Regions = all.ToList(),
-                Note = "Card, Apple/Google Pay, PayPal, bank"
+                Note = "Card, Apple/Google Pay, PayPal, bank",
+                Guide = WidgetGuide("MoonPay", "your card, Apple Pay, Google Pay, PayPal or a bank transfer")
             },
             new()
             {
@@ -142,7 +162,8 @@ public class FiatRampSettings
                 UrlTemplate = "https://global.transak.com/?apiKey={apiKey}&cryptoCurrencyCode=BTC&network=mainnet&walletAddress={address}&fiatCurrency={currency}&fiatAmount={fiat}&disableWalletAddressForm=true",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = all.ToList(),
-                Note = "Card, Apple/Google Pay, bank"
+                Note = "Card, Apple/Google Pay, bank",
+                Guide = WidgetGuide("Transak", "your card, Apple Pay, Google Pay or a bank transfer")
             },
             new()
             {
@@ -150,7 +171,8 @@ public class FiatRampSettings
                 UrlTemplate = "https://app.rampnetwork.com/?hostApiKey={apiKey}&hostAppName={store}&userAddress={address}&enabledCryptoAssets=BTC_BTC&defaultAsset=BTC_BTC&fiatCurrency={currency}&fiatValue={fiat}",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU, Region.US },
-                Note = "Card, Apple/Google Pay, SEPA"
+                Note = "Card, Apple/Google Pay, SEPA",
+                Guide = WidgetGuide("Ramp", "your card, Apple Pay, Google Pay or a SEPA transfer")
             },
             new()
             {
@@ -159,7 +181,8 @@ public class FiatRampSettings
                 Signing = UrlSigning.Mercuryo,
                 Methods = cardish.ToList(),
                 Regions = new() { Region.EU, Region.Other },
-                Note = "Card, Apple/Google Pay"
+                Note = "Card, Apple/Google Pay",
+                Guide = WidgetGuide("Mercuryo", "your card, Apple Pay or Google Pay")
             },
             new()
             {
@@ -167,7 +190,8 @@ public class FiatRampSettings
                 UrlTemplate = "https://{apiKey}.banxa.com/?coinType=BTC&blockchain=BTC&fiatType={currency}&fiatAmount={fiat}&walletAddress={address}",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = all.ToList(),
-                Note = "{apiKey} = your Banxa partner subdomain"
+                Note = "{apiKey} = your Banxa partner subdomain",
+                Guide = WidgetGuide("Banxa", "your card, Apple Pay, Google Pay or a bank transfer")
             },
             new()
             {
@@ -176,7 +200,8 @@ public class FiatRampSettings
                 Signing = UrlSigning.Paybis,
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU, Region.US },
-                Note = "Card, Apple/Google Pay, bank"
+                Note = "Card, Apple/Google Pay, bank",
+                Guide = WidgetGuide("Paybis", "your card, Apple Pay, Google Pay or a bank transfer")
             },
             new()
             {
@@ -184,7 +209,8 @@ public class FiatRampSettings
                 UrlTemplate = "https://guardarian.com/calculator/v1?partner_api_token={apiKey}&default_crypto_currency=BTC&default_fiat_currency={currency}&default_fiat_amount={fiat}&payout_address={address}",
                 Methods = cardish.Concat(new[] { PayMethod.Bank }).ToList(),
                 Regions = new() { Region.EU },
-                Note = "Card, SEPA · EU"
+                Note = "Card, SEPA · EU",
+                Guide = WidgetGuide("Guardarian", "your card or a SEPA transfer")
             },
             new()
             {
@@ -192,7 +218,11 @@ public class FiatRampSettings
                 UrlTemplate = "https://coinatmradar.com/",
                 Methods = new() { PayMethod.Cash },
                 Regions = all.ToList(),
-                Note = "Scan this page's QR code at the ATM"
+                Note = "Scan this page's QR code at the ATM",
+                Guide = "Tap the button below to find a Bitcoin ATM near you. Pick one that sells Bitcoin.\n" +
+                        "At the ATM choose Buy Bitcoin and, when asked for your wallet, scan the QR code from step 3 of this page (tap Show QR code). Do not let the ATM create a wallet for you.\n" +
+                        "Insert cash for at least {buy}. ATM fees are high, often 10 to 20 percent, so round up.\n" +
+                        "Keep the receipt. Come back to this page; the payment shows up once the ATM sends it, usually within an hour."
             },
             new()
             {
@@ -200,7 +230,11 @@ public class FiatRampSettings
                 UrlTemplate = "https://azte.co/",
                 Methods = new() { PayMethod.Cash },
                 Regions = all.ToList(),
-                Note = "Buy a voucher with cash, redeem to this address"
+                Note = "Buy a voucher with cash, redeem to this address",
+                Guide = "Tap the button below and use the map to find a shop near you that sells Azteco Bitcoin vouchers.\n" +
+                        "Buy a voucher for at least {buy} in cash.\n" +
+                        "Redeem it on azte.co: enter the voucher code and paste the address from step 3 ({address_short}).\n" +
+                        "Come back to this page. It updates by itself once the voucher is redeemed."
             },
         };
     }
