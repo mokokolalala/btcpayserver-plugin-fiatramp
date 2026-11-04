@@ -1,0 +1,35 @@
+name: Deploy plugin to server
+
+# Manual redeploy of any released tag (also used to roll back).
+# Automatic deploys on new tags live in build.yml (job "deploy") and use the same server-side script.
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy, e.g. v0.2.1"
+        required: true
+
+env:
+  PLUGIN: BTCPayServer.Plugins.FiatRamp
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Install on the server over SSH
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'btcpaydeploy' }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          test -n "$DEPLOY_HOST" || { echo "DEPLOY_HOST variable is not set"; exit 1; }
+          test -n "$DEPLOY_SSH_KEY" || { echo "DEPLOY_SSH_KEY secret is not set"; exit 1; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/$PLUGIN.btcpay"
+          echo "deploying $URL"
+          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$URL"

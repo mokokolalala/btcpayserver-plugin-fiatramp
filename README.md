@@ -11,6 +11,8 @@ No partner keys are needed: providers are plain public links, with the amount fi
 
 ## Install
 
+For automatic deploys from GitHub to your server (one-time setup for the system administrator), see [deploy/DEPLOY.md](deploy/DEPLOY.md). Manual install:
+
 1. Download `BTCPayServer.Plugins.FiatRamp.btcpay` from the latest release (or the *Build plugin* workflow artifact).
 2. As a server admin open **Server Settings → Plugins → Upload plugin**, select the file, upload.
 3. Restart BTCPay Server when prompted.
