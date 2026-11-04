@@ -113,7 +113,7 @@ public class PluginTests
             Assert.Contains(steps, s => s.Copy == "address");
             Assert.Contains(steps, s => s.Copy == "fiat");
             Assert.True(steps.Count(s => s.Check) <= 1, p.Id);
-            Assert.All(steps, s => Assert.True(s.ImageUrl is null || s.ImageUrl.StartsWith("https://")));
+            Assert.All(steps, s => Assert.True(s.ImageUrl is null || s.ImageUrl.StartsWith("https://") || s.ImageUrl.StartsWith("~/Resources/guides/")));
         }
     }
 

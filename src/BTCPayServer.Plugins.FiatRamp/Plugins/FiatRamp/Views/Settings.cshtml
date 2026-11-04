@@ -186,7 +186,7 @@
                                                             <textarea name="Providers[@k].Steps[@sk].Text" class="form-control" rows="2" placeholder="What the customer does on this screen">@s.Text</textarea>
                                                         </div>
                                                         <div class="col-md-5">
-                                                            <input name="Providers[@k].Steps[@sk].ImageUrl" value="@s.ImageUrl" class="form-control form-control-sm mb-1" placeholder="Screenshot or video URL (https; image, .mp4, YouTube, Vimeo)" />
+                                                            <input name="Providers[@k].Steps[@sk].ImageUrl" value="@s.ImageUrl" class="form-control form-control-sm mb-1" placeholder="Screenshot or video: https URL (image, .mp4, YouTube, Vimeo) or ~/Resources/guides/<file> shipped with the plugin" />
                                                             <div class="d-flex gap-1">
                                                                 <select name="Providers[@k].Steps[@sk].Copy" class="form-select form-select-sm" title="Copy button on this step">
                                                                     @foreach (var (val, label) in copies)
@@ -375,7 +375,7 @@
                 <textarea name="Providers[__KEY__].Steps[__S__].Text" class="form-control" rows="2" placeholder="What the customer does on this screen"></textarea>
             </div>
             <div class="col-md-5">
-                <input name="Providers[__KEY__].Steps[__S__].ImageUrl" class="form-control form-control-sm mb-1" placeholder="Screenshot or video URL (https; image, .mp4, YouTube, Vimeo)" />
+                <input name="Providers[__KEY__].Steps[__S__].ImageUrl" class="form-control form-control-sm mb-1" placeholder="Screenshot or video: https URL (image, .mp4, YouTube, Vimeo) or ~/Resources/guides/<file> shipped with the plugin" />
                 <div class="d-flex gap-1">
                     <select name="Providers[__KEY__].Steps[__S__].Copy" class="form-select form-select-sm" title="Copy button on this step">
                         @foreach (var (val, label) in copies)

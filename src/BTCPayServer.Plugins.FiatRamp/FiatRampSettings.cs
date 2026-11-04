@@ -66,8 +66,9 @@ public class GuideStep
     public string Text { get; set; } = "";
 
     /// <summary>
-    /// Screenshot or video of the provider's screen for this step (absolute https URL): an image, an .mp4/.webm file,
-    /// or a YouTube / Vimeo link (embedded). Without one, a drawn stand-in is shown.
+    /// Screenshot or video of the provider's screen for this step: an https URL to an image, an .mp4/.webm file or a
+    /// YouTube / Vimeo page (embedded), or "~/..." for a file served by this BTCPay (the plugin ships its own under
+    /// ~/Resources/guides/). Without one, a drawn stand-in is shown.
     /// </summary>
     public string? ImageUrl { get; set; }
 
@@ -180,7 +181,8 @@ public class FiatRampSettings
         new() { Kind = "wait", Text = $"When {provider} says the purchase is complete, come back to this page. The status at the bottom updates by itself, usually within 10 to 30 minutes." },
     };
 
-    const string GuideImages = "https://raw.githubusercontent.com/mokokolalala/btcpayserver-plugin-fiatramp/master/docs/guides/";
+    /// <summary>Screenshots shipped inside the plugin (Resources/guides, embedded and served from the web root).</summary>
+    const string GuideImages = "~/Resources/guides/";
 
     public static List<ProviderConfig> DefaultProviders()
     {

@@ -42,7 +42,7 @@
                     note = p.Note,
                     methods = p.Methods.Select(m => m.ToString()),
                     regions = p.Regions.Select(r => r.ToString()),
-                    steps = p.EffectiveSteps().Select(s => new { text = s.Text, image = s.ImageUrl, copy = s.Copy, open = s.Open, check = s.Check, kind = s.Kind }),
+                    steps = p.EffectiveSteps().Select(s => new { text = s.Text, image = s.ImageUrl is { } img && img.StartsWith("~/") ? Url.Content(img) : s.ImageUrl, copy = s.Copy, open = s.Open, check = s.Check, kind = s.Kind }),
                     url = Url.Action("Go", "FiatRamp", new { area = Plugin.Area, invoiceId = Model.InvoiceId, providerId = p.Id })
                 })
         };

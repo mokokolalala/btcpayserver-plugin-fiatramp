@@ -60,18 +60,22 @@ jobs:
     runs-on: ubuntu-latest
     environment: production
     steps:
-      - name: Install on the server over SSH
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PLUGIN }}
+          path: artifacts
+
+      - name: Push to the server over SSH
         env:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'btcpaydeploy' }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          TAG: ${{ github.ref_name }}
         run: |
           test -n "$DEPLOY_SSH_KEY" || { echo "DEPLOY_SSH_KEY secret is not set"; exit 1; }
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/$PLUGIN.btcpay"
-          echo "deploying $URL"
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$URL"
+          DIR="$(dirname "$(find artifacts -name "$PLUGIN.btcpay" | head -1)")"
+          echo "deploying $(cat "$DIR/$PLUGIN.btcpay.json")"
+          tar -C "$DIR" -c "$PLUGIN.btcpay" "$PLUGIN.btcpay.json" | ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" install

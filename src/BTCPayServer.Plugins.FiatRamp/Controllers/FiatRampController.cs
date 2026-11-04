@@ -124,8 +124,8 @@ public class FiatRampController(
                 ModelState.AddModelError("", $"\"{p.Name}\": the screenshot must be an absolute https:// image URL.");
             foreach (var s in p.Steps)
             {
-                if (s.ImageUrl is not null && (!Uri.TryCreate(s.ImageUrl, UriKind.Absolute, out var si) || si.Scheme != Uri.UriSchemeHttps))
-                    ModelState.AddModelError("", $"\"{p.Name}\": a step screenshot must be an absolute https:// image URL.");
+                if (s.ImageUrl is not null && !s.ImageUrl.StartsWith("~/") && !s.ImageUrl.StartsWith("/") && (!Uri.TryCreate(s.ImageUrl, UriKind.Absolute, out var si) || si.Scheme != Uri.UriSchemeHttps))
+                    ModelState.AddModelError("", $"\"{p.Name}\": a step screenshot must be an https:// URL or a ~/ path on this server.");
             }
             if (p.Enabled && p.Steps.Count(s => s.Open) == 0 && p.Steps.Count > 0)
                 ModelState.AddModelError("", $"\"{p.Name}\": one step should have the \"Open provider\" button, or the customer has no way to get there.");

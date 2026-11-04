@@ -1,7 +1,8 @@
 name: Deploy plugin to server
 
 # Manual redeploy of any released tag (also used to roll back).
-# Automatic deploys on new tags live in build.yml (job "deploy") and use the same server-side script.
+# Automatic deploys on new tags live in build.yml (job "deploy"); both push the release files to the
+# server over SSH, so the server needs no access to GitHub and the repository can be private.
 on:
   workflow_dispatch:
     inputs:
@@ -16,20 +17,24 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    permissions:
+      contents: read
     steps:
-      - name: Install on the server over SSH
+      - name: Download the release files
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ inputs.tag }}" --repo "${{ github.repository }}" -p "$PLUGIN.btcpay" -p "$PLUGIN.btcpay.json" -D files
+
+      - name: Push to the server over SSH
         env:
           DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
           DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
           DEPLOY_USER: ${{ vars.DEPLOY_USER || 'btcpaydeploy' }}
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
-          TAG: ${{ inputs.tag }}
         run: |
           test -n "$DEPLOY_HOST" || { echo "DEPLOY_HOST variable is not set"; exit 1; }
           test -n "$DEPLOY_SSH_KEY" || { echo "DEPLOY_SSH_KEY secret is not set"; exit 1; }
           mkdir -p ~/.ssh && chmod 700 ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key && chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -p "$DEPLOY_PORT" -H "$DEPLOY_HOST" >> ~/.ssh/known_hosts 2>/dev/null
-          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/$PLUGIN.btcpay"
-          echo "deploying $URL"
-          ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" "$URL"
+          tar -C files -c "$PLUGIN.btcpay" "$PLUGIN.btcpay.json" | ssh -i ~/.ssh/deploy_key -p "$DEPLOY_PORT" -o BatchMode=yes "$DEPLOY_USER@$DEPLOY_HOST" install

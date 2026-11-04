@@ -1,57 +1,61 @@
 #!/usr/bin/env bash
 # Installs (or updates) the Fiat on-ramp plugin on a BTCPay Server docker deployment.
 #
-# Usage:   btcpay-install-plugin.sh <url-of-.btcpay>
-#          btcpay-install-plugin.sh https://github.com/mokokolalala/btcpayserver-plugin-fiatramp/releases/download/v0.2.1/BTCPayServer.Plugins.FiatRamp.btcpay
+# Two ways to give it the plugin:
+#   1. a release URL:   btcpay-install-plugin.sh https://github.com/<owner>/<repo>/releases/download/v0.2.1/BTCPayServer.Plugins.FiatRamp.btcpay
+#   2. a tar on stdin:  tar c BTCPayServer.Plugins.FiatRamp.btcpay BTCPayServer.Plugins.FiatRamp.btcpay.json | btcpay-install-plugin.sh
+#      (this is what GitHub Actions does over SSH, so the server never needs access to GitHub and the repo can be private)
 #
-# When run as an SSH forced command (see deploy/DEPLOY.md), the URL comes from $SSH_ORIGINAL_COMMAND
-# and must point at a release of the plugin repository; anything else is refused.
+# As an SSH forced command, the URL (if any) comes from $SSH_ORIGINAL_COMMAND; with no URL, stdin is read.
 #
 # What it does, which is exactly what BTCPay's own "Upload plugin" does:
-#   1. downloads <Name>.btcpay and <Name>.btcpay.json from the release,
-#   2. copies them into the plugins folder inside the btcpayserver container as <Name>.btcpay / <Name>.json,
-#   3. appends "install:<Name>" to the plugins folder's "commands" file,
-#   4. restarts the container; on startup BTCPay swaps the plugin in,
-#   5. waits for the log line that says the new version is running, and fails loudly otherwise.
+#   copy <Name>.btcpay and <Name>.json into the plugins folder inside the btcpayserver container,
+#   append "install:<Name>" to the folder's "commands" file, restart the container, and wait for
+#   the log line "Running plugin <Name> - <version>". Fails loudly otherwise.
 #
-# Environment overrides (defaults match a standard btcpay-setup.sh / docker-compose deployment):
-#   BTCPAY_CONTAINER   name of the btcpayserver container        (default: generated_btcpayserver_1)
-#   BTCPAY_PLUGINDIR   plugins folder inside the container       (default: /datadir/plugins)
-#   PLUGIN             plugin identifier                         (default: BTCPayServer.Plugins.FiatRamp)
-#   RELEASES_PREFIX    only URLs starting with this are accepted (default: the plugin repo's releases)
+# Overrides (defaults match a standard btcpay-setup.sh deployment):
+#   BTCPAY_CONTAINER (generated_btcpayserver_1)  BTCPAY_PLUGINDIR (/datadir/plugins)  PLUGIN (BTCPayServer.Plugins.FiatRamp)
 set -euo pipefail
 
 PLUGIN="${PLUGIN:-BTCPayServer.Plugins.FiatRamp}"
 BTCPAY_CONTAINER="${BTCPAY_CONTAINER:-generated_btcpayserver_1}"
 BTCPAY_PLUGINDIR="${BTCPAY_PLUGINDIR:-/datadir/plugins}"
-RELEASES_PREFIX="${RELEASES_PREFIX:-https://github.com/mokokolalala/btcpayserver-plugin-fiatramp/releases/download/}"
 
-URL="${1:-${SSH_ORIGINAL_COMMAND:-}}"
 log() { printf '[install-plugin] %s\n' "$*" >&2; }
 die() { log "ERROR: $*"; exit 1; }
 
-[ -n "$URL" ] || die "usage: $0 <url-of-.btcpay>"
-case "$URL" in
-  "$RELEASES_PREFIX"*"/$PLUGIN.btcpay") ;;
-  *) die "refusing URL outside ${RELEASES_PREFIX}<tag>/$PLUGIN.btcpay: $URL" ;;
-esac
 command -v docker >/dev/null || die "docker not found in PATH"
 docker inspect "$BTCPAY_CONTAINER" >/dev/null 2>&1 || die "container $BTCPAY_CONTAINER not found (set BTCPAY_CONTAINER)"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
-log "downloading $URL"
-curl -fsSL --retry 3 -o "$TMP/$PLUGIN.btcpay" "$URL"
-curl -fsSL --retry 3 -o "$TMP/$PLUGIN.json" "$URL.json" || die "manifest $URL.json not found"
+URL="${1:-${SSH_ORIGINAL_COMMAND:-}}"
+case "$URL" in install|"") URL="";; esac   # "install" = the files come on stdin (what GitHub Actions sends)
+if [ -n "$URL" ]; then
+  case "$URL" in
+    https://github.com/*/releases/download/*/"$PLUGIN.btcpay"|https://github.com/*/releases/latest/download/"$PLUGIN.btcpay") ;;
+    *) die "expected a GitHub release URL ending in /$PLUGIN.btcpay, got: $URL" ;;
+  esac
+  log "downloading $URL"
+  curl -fsSL --retry 3 -o "$TMP/$PLUGIN.btcpay" "$URL"
+  curl -fsSL --retry 3 -o "$TMP/$PLUGIN.json" "$URL.json" || die "manifest $URL.json not found"
+else
+  [ ! -t 0 ] || die "usage: $0 <release-url>   or   tar c <plugin>.btcpay <plugin>.btcpay.json | $0"
+  log "reading plugin files from stdin"
+  tar x -C "$TMP" -f - 2>/dev/null || die "stdin is not a tar archive"
+  [ -f "$TMP/$PLUGIN.btcpay" ] || die "tar did not contain $PLUGIN.btcpay"
+  if [ -f "$TMP/$PLUGIN.btcpay.json" ]; then mv "$TMP/$PLUGIN.btcpay.json" "$TMP/$PLUGIN.json"; fi
+  [ -f "$TMP/$PLUGIN.json" ] || die "tar did not contain $PLUGIN.btcpay.json"
+fi
 
-# sanity: it is a zip that contains the plugin assembly, and the manifest names this plugin
+# sanity: a zip with the plugin assembly, and a manifest naming this plugin
 if command -v unzip >/dev/null; then
   unzip -l "$TMP/$PLUGIN.btcpay" | grep -q " $PLUGIN.dll\$" || die "archive does not contain $PLUGIN.dll"
 fi
 grep -q "\"$PLUGIN\"" "$TMP/$PLUGIN.json" || die "manifest does not name $PLUGIN"
 VERSION="$(sed -n 's/.*"[Vv]ersion"[^"]*"\([^"]*\)".*/\1/p' "$TMP/$PLUGIN.json" | head -1)"
-log "release version: ${VERSION:-unknown}"
+log "plugin version: ${VERSION:-unknown}"
 
 log "copying into $BTCPAY_CONTAINER:$BTCPAY_PLUGINDIR"
 docker exec "$BTCPAY_CONTAINER" mkdir -p "$BTCPAY_PLUGINDIR"
